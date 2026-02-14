@@ -161,46 +161,46 @@ FVector ACubeToSphere::GetCellCenterWorld(int32 Face, int32 CellX, int32 CellY) 
 	return GetActorTransform().TransformPosition(GetCellCenterLocal(Face, CellX, CellY));
 }
 
-// bool ACubeToSphere::GetCellWallEdgeLocal(int32 Face, int32 CellX, int32 CellY, EMazeDir Dir,
-//                                          FVector& OutA, FVector& OutB) const
-// {
-// 	// Requires surface to be built at least once
-// 	if (!FaceSphereVerts.IsValidIndex(Face)) return false;
-//
-// 	const TArray<FVector>& FV = FaceSphereVerts[Face];
-// 	if (FV.Num() != Resolution * Resolution) return false;
-//
-// 	const int32 N = GetCellsPerFace();
-// 	if (CellX < 0 || CellX >= N || CellY < 0 || CellY >= N) return false;
-//
-// 	// Cell corners in the vertex grid
-// 	const FVector V00 = FV[VertIndex(CellX,     CellY    )];
-// 	const FVector V10 = FV[VertIndex(CellX + 1, CellY    )];
-// 	const FVector V01 = FV[VertIndex(CellX,     CellY + 1)];
-// 	const FVector V11 = FV[VertIndex(CellX + 1, CellY + 1)];
-//
-// 	// Edge endpoints by direction
-// 	switch (Dir)
-// 	{
-// 		case EMazeDir::N: OutA = V00; OutB = V10; return true;
-// 		case EMazeDir::S: OutA = V01; OutB = V11; return true;
-// 		case EMazeDir::W: OutA = V00; OutB = V01; return true;
-// 		case EMazeDir::E: OutA = V10; OutB = V11; return true;
-// 	}
-//
-// 	return false;
-// }
+bool ACubeToSphere::GetCellWallEdgeLocal(int32 Face, int32 CellX, int32 CellY, EMazeDir Dir,
+                                         FVector& OutA, FVector& OutB) const
+{
+	// Requires surface to be built at least once
+	if (!FaceSphereVerts.IsValidIndex(Face)) return false;
 
-// bool ACubeToSphere::GetCellWallEdgeWorld(int32 Face, int32 CellX, int32 CellY, EMazeDir Dir,
-//                                          FVector& OutA, FVector& OutB) const
-// {
-// 	FVector ALocal, BLocal;
-// 	if (!GetCellWallEdgeLocal(Face, CellX, CellY, Dir, ALocal, BLocal))
-// 	{
-// 		return false;
-// 	}
-//
-// 	OutA = GetActorTransform().TransformPosition(ALocal);
-// 	OutB = GetActorTransform().TransformPosition(BLocal);
-// 	return true;
-// }
+	const TArray<FVector>& FV = FaceSphereVerts[Face];
+	if (FV.Num() != Resolution * Resolution) return false;
+
+	const int32 N = GetCellsPerFace();
+	if (CellX < 0 || CellX >= N || CellY < 0 || CellY >= N) return false;
+
+	// Cell corners in the vertex grid
+	const FVector V00 = FV[VertIndex(CellX,     CellY    )];
+	const FVector V10 = FV[VertIndex(CellX + 1, CellY    )];
+	const FVector V01 = FV[VertIndex(CellX,     CellY + 1)];
+	const FVector V11 = FV[VertIndex(CellX + 1, CellY + 1)];
+
+	// Edge endpoints by direction
+	switch (Dir)
+	{
+		case EMazeDir::N: OutA = V00; OutB = V10; return true;
+		case EMazeDir::S: OutA = V01; OutB = V11; return true;
+		case EMazeDir::W: OutA = V00; OutB = V01; return true;
+		case EMazeDir::E: OutA = V10; OutB = V11; return true;
+	}
+
+	return false;
+}
+
+bool ACubeToSphere::GetCellWallEdgeWorld(int32 Face, int32 CellX, int32 CellY, EMazeDir Dir,
+                                         FVector& OutA, FVector& OutB) const
+{
+	FVector ALocal, BLocal;
+	if (!GetCellWallEdgeLocal(Face, CellX, CellY, Dir, ALocal, BLocal))
+	{
+		return false;
+	}
+
+	OutA = GetActorTransform().TransformPosition(ALocal);
+	OutB = GetActorTransform().TransformPosition(BLocal);
+	return true;
+}

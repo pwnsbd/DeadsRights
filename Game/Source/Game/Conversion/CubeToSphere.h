@@ -2,7 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
-// #include "MazeTypes.h"                 // for EMazeDir
+#include "MazeTypes.h"                 // for EMazeDir
 #include "CubeToSphere.generated.h"
 
 class UProceduralMeshComponent;
@@ -43,13 +43,13 @@ public:
 	 * Contract function: returns the endpoints of the requested cell wall edge on the sphere.
 	 * This lets other systems build walls without knowing vertex indexing.
 	 */
-	// UFUNCTION(BlueprintCallable, Category="CubeToSphere|Grid")
-	// bool GetCellWallEdgeLocal(int32 Face, int32 CellX, int32 CellY, EMazeDir Dir,
-	//                           FVector& OutA, FVector& OutB) const;
-	//
-	// UFUNCTION(BlueprintCallable, Category="CubeToSphere|Grid")
-	// bool GetCellWallEdgeWorld(int32 Face, int32 CellX, int32 CellY, EMazeDir Dir,
-	//                           FVector& OutA, FVector& OutB) const;
+	UFUNCTION(BlueprintCallable, Category="CubeToSphere|Grid")
+	bool GetCellWallEdgeLocal(int32 Face, int32 CellX, int32 CellY, EMazeDir Dir,
+	                          FVector& OutA, FVector& OutB) const;
+	
+	UFUNCTION(BlueprintCallable, Category="CubeToSphere|Grid")
+	bool GetCellWallEdgeWorld(int32 Face, int32 CellX, int32 CellY, EMazeDir Dir,
+	                          FVector& OutA, FVector& OutB) const;
 
 	UFUNCTION(BlueprintPure, Category="CubeToSphere|Shape")
 	float GetRadius() const { return Radius; }

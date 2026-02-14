@@ -6,7 +6,7 @@
 #include "Orchestrator.generated.h"
 
 class ACubeToSphere;
-class USphereMaze;
+class UMaze;
 class UHierarchicalInstancedStaticMeshComponent;
 class UStaticMesh;
 
@@ -41,8 +41,8 @@ public:
 
 public:
 	// ---- References ----
-	// UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Refs")
-	// ACubeToSphere* SphereActor = nullptr;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Refs")
+	ACubeToSphere* SphereActor = nullptr;
 
 	// ---- Maze params ----
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Maze")
@@ -70,8 +70,8 @@ public:
 
 protected:
 	// ---- Owned data/components ----
-	// UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Refs")
-	// USphereMaze* Maze = nullptr;
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Refs")
+	UMaze* Maze = nullptr;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Walls")
 	UHierarchicalInstancedStaticMeshComponent* WallHISM = nullptr;
