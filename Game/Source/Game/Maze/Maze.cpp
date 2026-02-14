@@ -11,7 +11,9 @@ void UMaze::Generate()
 	CellsPerFace = FMath::Max(1, CellsPerFace);
 
 	const int32 Total = 6 * CellsPerFace * CellsPerFace;
-	Cells.SetNum(Total);
+	// Cells.SetNum(Total);
+	Cells.SetNumZeroed(Total);
+
 
 	// 2) Reset all cells to "all walls, not visited"
 	ResetCells();

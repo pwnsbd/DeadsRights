@@ -2,7 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
-#include "MazeTypes.h"                 // for EMazeDir
+#include "../Maze/MazeTypes.h"                 // for EMazeDir
 #include "CubeToSphere.generated.h"
 
 class UProceduralMeshComponent;
@@ -53,11 +53,9 @@ public:
 
 	UFUNCTION(BlueprintPure, Category="CubeToSphere|Shape")
 	float GetRadius() const { return Radius; }
-
-	// Old name kept (if you used it anywhere)
-	float getRadius() const { return Radius; }
-
-public:
+	
+	void SetRadius(float val) { Radius = val; }
+	
 	// ---- Shape params ----
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="CubeToSphere|Shape")
 	int32 Resolution = 32; // vertices per side (>=2). cells per face = Resolution - 1

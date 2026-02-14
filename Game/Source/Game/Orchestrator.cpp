@@ -3,8 +3,8 @@
 #include "Components/HierarchicalInstancedStaticMeshComponent.h"
 #include "Components/SceneComponent.h"
 
-#include "CubeToSphere.h"
-#include "Maze.h"
+#include "Conversion/CubeToSphere.h"
+#include "Maze/Maze.h"
 
 AOrchestrator::AOrchestrator()
 {
@@ -27,12 +27,47 @@ void AOrchestrator::OnConstruction(const FTransform& Transform)
 	Rebuild();
 }
 
+void AOrchestrator::ResolveSphereFromChild()
+{
+	if (SphereActor) return;
+
+	TArray<UChildActorComponent*> ChildComps;
+	GetComponents<UChildActorComponent>(ChildComps);
+
+	// Prefer the one named exactly "sphereCild"
+	for (UChildActorComponent* CAC : ChildComps)
+	{
+		if (!CAC) continue;
+
+		if (CAC->GetFName() == FName(TEXT("sphereChild")))
+		{
+			SphereActor = Cast<ACubeToSphere>(CAC->GetChildActor());
+			if (SphereActor) return;
+		}
+	}
+
+	// Fallback: if there's only one child actor and it's a CubeToSphere, use it
+	for (UChildActorComponent* CAC : ChildComps)
+	{
+		if (!CAC) continue;
+
+		if (ACubeToSphere* AsSphere = Cast<ACubeToSphere>(CAC->GetChildActor()))
+		{
+			SphereActor = AsSphere;
+			return;
+		}
+	}
+}
+
+
 void AOrchestrator::Rebuild()
 {
+	ResolveSphereFromChild();
 	EnsureMazeGenerated();
 
 	if (SphereActor)
 	{
+		SphereActor->SetRadius(SphereRadius);
 		SphereActor->BuildSurface();
 	}
 
@@ -131,16 +166,17 @@ void AOrchestrator::BuildWallsFromMaze()
 	const int32 N = Maze->CellsPerFace;
 	if (N <= 0) return;
 
-	auto AddWallFromEdgeWorld = [&](const FVector& A, const FVector& B)
+	// Helps with maze and sphere being on the same center when we move sphere in view
+	auto AddWallFromEdgeLocal = [&](const FVector& A, const FVector& B)
 	{
 		const FVector Edge = (B - A);
 		const float EdgeLen = Edge.Size();
 		if (EdgeLen <= KINDA_SMALL_NUMBER) return;
 
 		const FVector Mid = (A + B) * 0.5f;
-		const FVector SphereCenter = SphereActor->GetActorLocation();
 
-		const FVector Up = (Mid - SphereCenter).GetSafeNormal();
+		// Local sphere center is (0,0,0) when child is identity
+		const FVector Up  = Mid.GetSafeNormal();
 		const FVector Fwd = Edge / EdgeLen;
 
 		const FQuat Rot = FRotationMatrix::MakeFromXZ(Fwd, Up).ToQuat();
@@ -152,8 +188,10 @@ void AOrchestrator::BuildWallsFromMaze()
 			WallHeight / WallMeshBaseLength
 		);
 
-		WallHISM->AddInstanceWorldSpace(FTransform(Rot, Loc, Scale));
+		// IMPORTANT: Add in component/local space (will follow orchestrator moves)
+		WallHISM->AddInstance(FTransform(Rot, Loc, Scale));
 	};
+
 
 	auto IsOpen = [&](const FMazeCell& C, EMazeDir Dir) -> bool
 	{
@@ -178,17 +216,18 @@ void AOrchestrator::BuildWallsFromMaze()
 
 				FVector A, B;
 
-				if (!IsOpen(Cell, EMazeDir::E) && SphereActor->GetCellWallEdgeWorld(Face, X, Y, EMazeDir::E, A, B))
-					AddWallFromEdgeWorld(A, B);
+				if (!IsOpen(Cell, EMazeDir::E) && SphereActor->GetCellWallEdgeLocal(Face, X, Y, EMazeDir::E, A, B))
+					AddWallFromEdgeLocal(A, B);
 
-				if (!IsOpen(Cell, EMazeDir::S) && SphereActor->GetCellWallEdgeWorld(Face, X, Y, EMazeDir::S, A, B))
-					AddWallFromEdgeWorld(A, B);
+				if (!IsOpen(Cell, EMazeDir::S) && SphereActor->GetCellWallEdgeLocal(Face, X, Y, EMazeDir::S, A, B))
+					AddWallFromEdgeLocal(A, B);
 
-				if (X == 0 && !IsOpen(Cell, EMazeDir::W) && SphereActor->GetCellWallEdgeWorld(Face, X, Y, EMazeDir::W, A, B))
-					AddWallFromEdgeWorld(A, B);
+				if (X == 0 && !IsOpen(Cell, EMazeDir::W) && SphereActor->GetCellWallEdgeLocal(Face, X, Y, EMazeDir::W, A, B))
+					AddWallFromEdgeLocal(A, B);
 
-				if (Y == 0 && !IsOpen(Cell, EMazeDir::N) && SphereActor->GetCellWallEdgeWorld(Face, X, Y, EMazeDir::N, A, B))
-					AddWallFromEdgeWorld(A, B);
+				if (Y == 0 && !IsOpen(Cell, EMazeDir::N) && SphereActor->GetCellWallEdgeLocal(Face, X, Y, EMazeDir::N, A, B))
+					AddWallFromEdgeLocal(A, B);
+
 			}
 		}
 	}

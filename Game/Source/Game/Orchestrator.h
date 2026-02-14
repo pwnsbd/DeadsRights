@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
 // #include "MazeTypes.h"
+#include "Components/ChildActorComponent.h"
 #include "Orchestrator.generated.h"
 
 class ACubeToSphere;
@@ -38,11 +39,14 @@ public:
 	                             float CapsuleHalfHeight = 88.f,
 	                             int32 MinOpenSides = 2,
 	                             int32 MaxTries = 5000) const;
+	void ResolveSphereFromChild();
 
-public:
 	// ---- References ----
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Refs")
 	ACubeToSphere* SphereActor = nullptr;
+	
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Sphere", meta=(ClampMin="1.0", UIMin="1.0"))
+	float SphereRadius = 600.f;
 
 	// ---- Maze params ----
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Maze")

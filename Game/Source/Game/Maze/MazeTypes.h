@@ -18,13 +18,13 @@ struct FMazeCell
 {
 	GENERATED_BODY()
 
-	// Used by maze generation (DFS etc.)
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly)
-	bool bVisited = false;
+	UPROPERTY() bool OpenN = false;
+	UPROPERTY() bool OpenE = false;
+	UPROPERTY() bool OpenS = false;
+	UPROPERTY() bool OpenW = false;
+	UPROPERTY() bool bVisited = false;
 
-	// True = corridor is open in that direction
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly) bool OpenN = false;
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly) bool OpenE = false;
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly) bool OpenS = false;
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly) bool OpenW = false;
+	FMazeCell()
+		: OpenN(false), OpenE(false), OpenS(false), OpenW(false), bVisited(false)
+	{}
 };
