@@ -318,3 +318,123 @@ void UMaze::StitchFaces()
 		           5, 0,   CellsPerFace - 1 - pos, EMazeDir::W);
 	}
 }
+
+
+
+// AI helper function to get traversable neighbors of a node in the maze graph
+TArray<FMazeNode> UMaze::GetTraversableNeighbors(const FMazeNode& Node) const
+{
+    TArray<FMazeNode> Neighbors; //Contains all valid neighboring nodes that can be traversed to from the input node
+
+    // Safety check – invalid nodes return empty neighbor list
+    if (!IsValid(Node.Face, Node.X, Node.Y))
+        return Neighbors;
+
+    const FMazeCell& Cell = GetCell(Node.Face, Node.X, Node.Y); //get the cell data for the input node
+    const int32 Max = CellsPerFace - 1;
+
+    /*
+        Cube Layout (matches StitchFaces):
+
+               [4]
+        [3] [0] [1] [2]
+               [5]
+
+        Middle ring: 0 → 1 → 2 → 3 → 0
+    */
+
+    // Attempt movement in each direction if there's an open corridor - Helper function
+    auto TryAddNeighbor = [&](EMazeDir Dir)
+    {
+        // Calculate potential neighbor's coordinates based on direction
+        int32 nf = Node.Face;
+        int32 nx = Node.X;
+        int32 ny = Node.Y;
+
+        // Attempts movement within same face first
+        switch (Dir)
+        {
+        case EMazeDir::N: ny -= 1; break;
+        case EMazeDir::S: ny += 1; break;
+        case EMazeDir::E: nx += 1; break;
+        case EMazeDir::W: nx -= 1; break;
+        }
+
+        // If still inside bounds → simple same-face move, and add to vector
+        if (IsValid(nf, nx, ny))
+        {
+            Neighbors.Add(FMazeNode(nf, nx, ny));
+            return;
+        }
+
+        // Else, If we reach here, we crossed a face boundary and must handle transition logic based on StitchFaces() stitching rules
+
+        // Middle ring (0-3)
+        if (Node.Face >= 0 && Node.Face <= 3)
+        {
+            if (Dir == EMazeDir::E && Node.X == Max)
+            {
+                int32 nextFace = (Node.Face + 1) % 4;
+                Neighbors.Add(FMazeNode(nextFace, 0, Node.Y));
+                return;
+            }
+            if (Dir == EMazeDir::W && Node.X == 0)
+            {
+                int32 nextFace = (Node.Face + 3) % 4;
+                Neighbors.Add(FMazeNode(nextFace, Max, Node.Y));
+                return;
+            }
+
+            // Top face (4)
+            if (Dir == EMazeDir::N && Node.Y == 0)
+            {
+                switch (Node.Face)
+                {
+                case 0: Neighbors.Add(FMazeNode(4, Node.X, Max)); return;
+                case 1: Neighbors.Add(FMazeNode(4, 0, Node.X)); return;
+                case 2: Neighbors.Add(FMazeNode(4, Max - Node.X, 0)); return;
+                case 3: Neighbors.Add(FMazeNode(4, Max, Max - Node.X)); return;
+                }
+            }
+
+            // Bottom face (5)
+            if (Dir == EMazeDir::S && Node.Y == Max)
+            {
+                switch (Node.Face)
+                {
+                case 0: Neighbors.Add(FMazeNode(5, Node.X, 0)); return;
+                case 1: Neighbors.Add(FMazeNode(5, Max, Node.X)); return;
+                case 2: Neighbors.Add(FMazeNode(5, Max - Node.X, Max)); return;
+                case 3: Neighbors.Add(FMazeNode(5, 0, Max - Node.X)); return;
+                }
+            }
+        }
+
+        // Movement from Top (4)
+        if (Node.Face == 4)
+        {
+            if (Dir == EMazeDir::S && Node.Y == Max) { Neighbors.Add(FMazeNode(0, Node.X, 0)); return; }
+            if (Dir == EMazeDir::W && Node.X == 0)   { Neighbors.Add(FMazeNode(1, Node.Y, 0)); return; }
+            if (Dir == EMazeDir::N && Node.Y == 0)   { Neighbors.Add(FMazeNode(2, Max - Node.X, 0)); return; }
+            if (Dir == EMazeDir::E && Node.X == Max) { Neighbors.Add(FMazeNode(3, Max - Node.Y, 0)); return; }
+        }
+
+        // Movement from Bottom (5)
+        if (Node.Face == 5)
+        {
+            if (Dir == EMazeDir::N && Node.Y == 0)   { Neighbors.Add(FMazeNode(0, Node.X, Max)); return; }
+            if (Dir == EMazeDir::E && Node.X == Max) { Neighbors.Add(FMazeNode(1, Node.Y, Max)); return; }
+            if (Dir == EMazeDir::S && Node.Y == Max) { Neighbors.Add(FMazeNode(2, Max - Node.X, Max)); return; }
+            if (Dir == EMazeDir::W && Node.X == 0)   { Neighbors.Add(FMazeNode(3, Max - Node.Y, Max)); return; }
+        }
+    };
+
+    // Only attempt directions that are open corridors
+    if (Cell.OpenN) TryAddNeighbor(EMazeDir::N);
+    if (Cell.OpenS) TryAddNeighbor(EMazeDir::S);
+    if (Cell.OpenE) TryAddNeighbor(EMazeDir::E);
+    if (Cell.OpenW) TryAddNeighbor(EMazeDir::W);
+
+    return Neighbors;
+}
+

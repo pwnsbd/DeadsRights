@@ -28,3 +28,14 @@ struct FMazeCell
 		: OpenN(false), OpenE(false), OpenS(false), OpenW(false), bVisited(false)
 	{}
 };
+
+//Represents a node in the maze graph for pathfinding; identifies a specific cell by its face and (x,y) coordinates on that face
+USTRUCT(BlueprintType)
+struct FMazeNode
+{
+  GENERATED_BODY()
+
+  UPROPERTY(VisibleAnywhere, BlueprintReadWrite)int32_t Face;
+  UPROPERTY(VisibleAnywhere, BlueprintReadWrite)int32_t X;
+  UPROPERTY(VisibleAnywhere, BlueprintReadWrite)int32_t Y;
+};

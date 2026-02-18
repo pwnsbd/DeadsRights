@@ -49,6 +49,10 @@ public:
 	UFUNCTION(BlueprintPure, Category="Maze")
 	int32 GetTotalCells() const { return 6 * CellsPerFace * CellsPerFace; }
 
+  //Returns a list of valid neighboring nodes that can be traversed to from the input node (used for AI pathfinding)
+  UFUNCTION(BlueprintCallable, Category="Maze")
+  TArray<FMazeNode> GetTraversableNeighbors(const FMazeNode& Node) const; 
+
 private:
 	// Convert (Face, X, Y) to flat index
 	FORCEINLINE int32 Index(int32 Face, int32 X, int32 Y) const
