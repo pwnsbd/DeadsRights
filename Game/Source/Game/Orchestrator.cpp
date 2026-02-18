@@ -66,12 +66,12 @@ void AOrchestrator::Rebuild()
 {
 	EnsureMazeGenerated();
 
-	// Init Navigator
-	if (!Navigator)
-	{
-		Navigator = NewObject<UMazeNavigator>(this);
-	}
-	Navigator->Init(Maze, SphereActor);
+	// // Init Navigator
+	// if (!Navigator)
+	// {
+	// 	Navigator = NewObject<UMazeNavigator>(this);
+	// }
+	// Navigator->Init(Maze, SphereActor);
 
 	ResolveSphereFromChild();
 
