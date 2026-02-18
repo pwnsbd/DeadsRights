@@ -39,8 +39,10 @@ FMazeNode UMazeNavigator::WorldToNode(FVector WorldPos) const
     return BestNode;
 }
 
+// uses the helper function from maze to get the neights of the node that are open and traversable (not walls)
 TArray<FMazeNode> UMazeNavigator::GetNeightbors(const FMazeNode &Node) const
 {
+    return Maze->GetTraversableNeighbors(Node);
 }
 
 bool UMazeNavigator::FindPath(FVector StartPos, FVector EndPos, TArray<FVector> &OutPath)
