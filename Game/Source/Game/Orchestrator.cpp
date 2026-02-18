@@ -10,7 +10,7 @@ AOrchestrator::AOrchestrator()
 {
 	PrimaryActorTick.bCanEverTick = false;
 
-	USceneComponent* Root = CreateDefaultSubobject<USceneComponent>(TEXT("Root"));
+	USceneComponent *Root = CreateDefaultSubobject<USceneComponent>(TEXT("Root"));
 	SetRootComponent(Root);
 
 	WallHISM = CreateDefaultSubobject<UHierarchicalInstancedStaticMeshComponent>(TEXT("WallHISM"));
@@ -19,7 +19,7 @@ AOrchestrator::AOrchestrator()
 	WallHISM->SetMobility(EComponentMobility::Movable);
 }
 
-void AOrchestrator::OnConstruction(const FTransform& Transform)
+void AOrchestrator::OnConstruction(const FTransform &Transform)
 {
 	Super::OnConstruction(Transform);
 
@@ -29,29 +29,33 @@ void AOrchestrator::OnConstruction(const FTransform& Transform)
 
 void AOrchestrator::ResolveSphereFromChild()
 {
-	if (SphereActor) return;
+	if (SphereActor)
+		return;
 
-	TArray<UChildActorComponent*> ChildComps;
+	TArray<UChildActorComponent *> ChildComps;
 	GetComponents<UChildActorComponent>(ChildComps);
 
 	// Prefer the one named exactly "sphereCild"
-	for (UChildActorComponent* CAC : ChildComps)
+	for (UChildActorComponent *CAC : ChildComps)
 	{
-		if (!CAC) continue;
+		if (!CAC)
+			continue;
 
 		if (CAC->GetFName() == FName(TEXT("sphereChild")))
 		{
 			SphereActor = Cast<ACubeToSphere>(CAC->GetChildActor());
-			if (SphereActor) return;
+			if (SphereActor)
+				return;
 		}
 	}
 
 	// Fallback: if there's only one child actor and it's a CubeToSphere, use it
-	for (UChildActorComponent* CAC : ChildComps)
+	for (UChildActorComponent *CAC : ChildComps)
 	{
-		if (!CAC) continue;
+		if (!CAC)
+			continue;
 
-		if (ACubeToSphere* AsSphere = Cast<ACubeToSphere>(CAC->GetChildActor()))
+		if (ACubeToSphere *AsSphere = Cast<ACubeToSphere>(CAC->GetChildActor()))
 		{
 			SphereActor = AsSphere;
 			return;
@@ -59,10 +63,17 @@ void AOrchestrator::ResolveSphereFromChild()
 	}
 }
 
-
 void AOrchestrator::Rebuild()
 {
 	EnsureMazeGenerated();
+
+	// Init Navigator
+	if (!Navigator)
+	{
+		Navigator = NewObject<UMazeNavigator>(this);
+	}
+	Navigator->Init(Maze, SphereActor);
+
 	ResolveSphereFromChild();
 
 	if (SphereActor)
@@ -90,32 +101,35 @@ void AOrchestrator::EnsureMazeGenerated()
 	Maze->Generate();
 }
 
-static FORCEINLINE int32 CountOpenSides(const FMazeCell& C)
+static FORCEINLINE int32 CountOpenSides(const FMazeCell &C)
 {
 	return (C.OpenN ? 1 : 0) + (C.OpenE ? 1 : 0) + (C.OpenS ? 1 : 0) + (C.OpenW ? 1 : 0);
 }
 
 bool AOrchestrator::IsCellSpawnable(int32 Face, int32 X, int32 Y, int32 MinOpenSides) const
 {
-	if (!Maze) return false;
+	if (!Maze)
+		return false;
 
-	const FMazeCell& C = Maze->GetCell(Face, X, Y);
+	const FMazeCell &C = Maze->GetCell(Face, X, Y);
 	return CountOpenSides(C) >= MinOpenSides;
 }
 
-bool AOrchestrator::FindRandomSpawnCell(int32& OutFace, int32& OutX, int32& OutY,
-                                        int32 MinOpenSides, int32 MaxTries) const
+bool AOrchestrator::FindRandomSpawnCell(int32 &OutFace, int32 &OutX, int32 &OutY,
+										int32 MinOpenSides, int32 MaxTries) const
 {
-	if (!Maze) return false;
+	if (!Maze)
+		return false;
 
 	const int32 N = Maze->CellsPerFace;
-	if (N <= 0) return false;
+	if (N <= 0)
+		return false;
 
 	for (int32 Try = 0; Try < MaxTries; ++Try)
 	{
 		const int32 Face = FMath::RandRange(0, 5);
-		const int32 X    = FMath::RandRange(0, N - 1);
-		const int32 Y    = FMath::RandRange(0, N - 1);
+		const int32 X = FMath::RandRange(0, N - 1);
+		const int32 Y = FMath::RandRange(0, N - 1);
 
 		if (IsCellSpawnable(Face, X, Y, MinOpenSides))
 		{
@@ -129,12 +143,13 @@ bool AOrchestrator::FindRandomSpawnCell(int32& OutFace, int32& OutX, int32& OutY
 	return false;
 }
 
-bool AOrchestrator::GetRandomSpawnTransform(FTransform& OutTransform,
-                                           float CapsuleHalfHeight,
-                                           int32 MinOpenSides,
-                                           int32 MaxTries) const
+bool AOrchestrator::GetRandomSpawnTransform(FTransform &OutTransform,
+											float CapsuleHalfHeight,
+											int32 MinOpenSides,
+											int32 MaxTries) const
 {
-	if (!SphereActor || !Maze) return false;
+	if (!SphereActor || !Maze)
+		return false;
 
 	int32 Face, X, Y;
 	if (!FindRandomSpawnCell(Face, X, Y, MinOpenSides, MaxTries))
@@ -156,28 +171,33 @@ bool AOrchestrator::GetRandomSpawnTransform(FTransform& OutTransform,
 
 void AOrchestrator::BuildWallsFromMaze()
 {
-	if (!WallHISM || !SphereActor || !Maze) return;
-	if (!WallMesh) return;
+	if (!WallHISM || !SphereActor || !Maze)
+		return;
+	if (!WallMesh)
+		return;
 
 	WallHISM->SetStaticMesh(WallMesh);
-	if (!WallHISM->GetStaticMesh()) return;
+	if (!WallHISM->GetStaticMesh())
+		return;
 
 	WallHISM->ClearInstances();
 
 	const int32 N = Maze->CellsPerFace;
-	if (N <= 0) return;
+	if (N <= 0)
+		return;
 
 	// Helps with maze and sphere being on the same center when we move sphere in view
-	auto AddWallFromEdgeLocal = [&](const FVector& A, const FVector& B)
+	auto AddWallFromEdgeLocal = [&](const FVector &A, const FVector &B)
 	{
 		const FVector Edge = (B - A);
 		const float EdgeLen = Edge.Size();
-		if (EdgeLen <= KINDA_SMALL_NUMBER) return;
+		if (EdgeLen <= KINDA_SMALL_NUMBER)
+			return;
 
 		const FVector Mid = (A + B) * 0.5f;
 
 		// Local sphere center is (0,0,0) when child is identity
-		const FVector Up  = Mid.GetSafeNormal();
+		const FVector Up = Mid.GetSafeNormal();
 		const FVector Fwd = Edge / EdgeLen;
 
 		const FQuat Rot = FRotationMatrix::MakeFromXZ(Fwd, Up).ToQuat();
@@ -186,22 +206,24 @@ void AOrchestrator::BuildWallsFromMaze()
 		const FVector Scale(
 			EdgeLen / WallMeshBaseLength,
 			WallThickness / WallMeshBaseLength,
-			WallHeight / WallMeshBaseLength
-		);
+			WallHeight / WallMeshBaseLength);
 
 		// IMPORTANT: Add in component/local space (will follow orchestrator moves)
 		WallHISM->AddInstance(FTransform(Rot, Loc, Scale));
 	};
 
-
-	auto IsOpen = [&](const FMazeCell& C, EMazeDir Dir) -> bool
+	auto IsOpen = [&](const FMazeCell &C, EMazeDir Dir) -> bool
 	{
 		switch (Dir)
 		{
-			case EMazeDir::N: return C.OpenN;
-			case EMazeDir::E: return C.OpenE;
-			case EMazeDir::S: return C.OpenS;
-			case EMazeDir::W: return C.OpenW;
+		case EMazeDir::N:
+			return C.OpenN;
+		case EMazeDir::E:
+			return C.OpenE;
+		case EMazeDir::S:
+			return C.OpenS;
+		case EMazeDir::W:
+			return C.OpenW;
 		}
 		return false;
 	};
@@ -213,7 +235,7 @@ void AOrchestrator::BuildWallsFromMaze()
 		{
 			for (int32 X = 0; X < N; ++X)
 			{
-				const FMazeCell& Cell = Maze->GetCell(Face, X, Y);
+				const FMazeCell &Cell = Maze->GetCell(Face, X, Y);
 
 				FVector A, B;
 
@@ -228,7 +250,6 @@ void AOrchestrator::BuildWallsFromMaze()
 
 				if (Y == 0 && !IsOpen(Cell, EMazeDir::N) && SphereActor->GetCellWallEdgeLocal(Face, X, Y, EMazeDir::N, A, B))
 					AddWallFromEdgeLocal(A, B);
-
 			}
 		}
 	}
