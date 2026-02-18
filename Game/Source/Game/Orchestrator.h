@@ -50,11 +50,16 @@ public:
 
 	// ---- Maze params ----
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Maze")
-	int32 Seed = 12345;
-
-	// Optional: set maze size here; Sphere Resolution should be CellsPerFace+1
+	int32 Seed = 122;
+	
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Maze")
 	int32 CellsPerFace = 31;
+	
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Sphere")
+	int32 Resolution = CellsPerFace + 1;
+
+	// Optional: set maze size here; Sphere Resolution should be CellsPerFace+1
+
 
 	// ---- Wall placeholder params ----
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Walls")

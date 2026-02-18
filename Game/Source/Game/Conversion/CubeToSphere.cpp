@@ -9,7 +9,6 @@ ACubeToSphere::ACubeToSphere()
 
 	Mesh = CreateDefaultSubobject<UProceduralMeshComponent>(TEXT("Mesh"));
 	SetRootComponent(Mesh);
-
 	CreateFaceRotations();
 }
 
@@ -31,12 +30,12 @@ void ACubeToSphere::CreateFaceRotations()
 	if (FaceRotations.Num() != 6)
 	{
 		FaceRotations.SetNum(6);
-		FaceRotations[0] = FRotator(90, 0, 0);
-		FaceRotations[1] = FRotator(180, 0, 0);
-		FaceRotations[2] = FRotator(270, 0, 0);
-		FaceRotations[3] = FRotator(360, 0, 0);
-		FaceRotations[4] = FRotator(0, 0, 90);
-		FaceRotations[5] = FRotator(0, 0, 270);
+		FaceRotations[0] = FRotator( 90, 0,   0); //front 
+		FaceRotations[1] = FRotator(0, 0,   90); // right
+		FaceRotations[2] = FRotator(270, 0,   0); // back
+		FaceRotations[3] = FRotator(  0, 0,   -90); // left  
+		FaceRotations[4] = FRotator(  0, 0,  0);  // top
+		FaceRotations[5] = FRotator(  180, 0, 0); // bottom
 	}
 }
 

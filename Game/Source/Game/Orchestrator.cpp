@@ -62,12 +62,13 @@ void AOrchestrator::ResolveSphereFromChild()
 
 void AOrchestrator::Rebuild()
 {
-	ResolveSphereFromChild();
 	EnsureMazeGenerated();
+	ResolveSphereFromChild();
 
 	if (SphereActor)
 	{
 		SphereActor->SetRadius(SphereRadius);
+		SphereActor->SetResolution(Resolution);
 		SphereActor->BuildSurface();
 	}
 
