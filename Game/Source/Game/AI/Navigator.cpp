@@ -1,5 +1,5 @@
 #include "Navigator.h"
-#include "../Maxe/Maze.h"
+#include "../Maze/Maze.h"
 #include "../Conversion/CubeToSphere.h"
 #include "Kismet/KismetMathLibrary.h"
 
@@ -26,7 +26,7 @@ FMazeNode UMazeNavigator::WorldToNode(FVector WorldPos) const
         {
             for (int32 Y = 0; Y < Maze->CellsPerFace; Y++)
             {
-                FVectore Center = Sphere->GetCellCenterWorld(F, X, Y);
+                FVector Center = Sphere->GetCellCenterWorld(Face, X, Y);
                 float DistSq = FVector::DistSquared(Center, WorldPos);
                 if (DistSq < BestDistSq)
                 {
@@ -39,8 +39,8 @@ FMazeNode UMazeNavigator::WorldToNode(FVector WorldPos) const
     return BestNode;
 }
 
-// uses the helper function from maze to get the neights of the node that are open and traversable (not walls)
-TArray<FMazeNode> UMazeNavigator::GetNeightbors(const FMazeNode &Node) const
+// uses the helper function from maze to get the neighbors of the node that are open and traversable (not walls)
+TArray<FMazeNode> UMazeNavigator::GetNeighbors(const FMazeNode &Node) const
 {
     return Maze->GetTraversableNeighbors(Node);
 }
@@ -59,10 +59,6 @@ bool UMazeNavigator::FindPath(FVector StartPos, FVector EndPos, TArray<FVector> 
 
     // initialize A* data structures
     TArray<FMazeNode> OpenSet;
-    OpenSet.HeapPush(StartNode, [](const FMazeNode &A, const FMazeNode &B))
-    {
-        return false;
-    }
 
     // initialize A* data structures: estimated cost
     TMap<FMazeNode, float> CostSoFar;
@@ -71,17 +67,23 @@ bool UMazeNavigator::FindPath(FVector StartPos, FVector EndPos, TArray<FVector> 
     // initialize A* data structures: parent map
     TMap<FMazeNode, FMazeNode> CameFrom;
 
+    // initialize starting node
+    OpenSet.HeapPush(StartNode, [&](const FMazeNode &A, const FMazeNode &B)
+                     { 
+        float CostA = CostSoFar.Contains(A) ? CostSoFar[A] + FVector::Dist(Sphere->GetCellCenterWorld(A.Face, A.X, A.Y), EndPos) : FLT_MAX;
+        float CostB = CostSoFar.Contains(B) ? CostSoFar[B] + FVector::Dist(Sphere->GetCellCenterWorld(B.Face, B.X, B.Y), EndPos) : FLT_MAX;
+        return CostA < CostB; });
+
     // A* main loop
     while (OpenSet.Num() > 0)
     {
         // get node with lowest estimated total cost
         FMazeNode CurrentNode;
-        OpenSet.heapPop(CurrentNode, [](const FMazeNode &A, const FMazeNode &B))
-        {
-            float CostA = CostSoFar[A] + FVector::Dist(Sphere->GetCellCenterWorld(A.Face, A.X, A.Y), EndPos);
-            float CostB = CostSoFar[B] + FVector::Dist(Sphere->GetCellCenterWorld(B.Face, B.X, B.Y), EndPos);
-            return CostA < CostB;
-        }
+        OpenSet.HeapPop(CurrentNode, [&](const FMazeNode &A, const FMazeNode &B)
+                        {
+            float CostA = CostSoFar.Contains(A) ? CostSoFar[A] + FVector::Dist(Sphere->GetCellCenterWorld(A.Face, A.X, A.Y), EndPos) : FLT_MAX;
+            float CostB = CostSoFar.Contains(B) ? CostSoFar[B] + FVector::Dist(Sphere->GetCellCenterWorld(B.Face, B.X, B.Y), EndPos) : FLT_MAX;
+            return CostA < CostB; });
 
         // base case: destination reached
         if (CurrentNode == EndNode)
@@ -91,7 +93,7 @@ bool UMazeNavigator::FindPath(FVector StartPos, FVector EndPos, TArray<FVector> 
             while (!(step == StartNode))
             {
                 OutPath.Add(Sphere->GetCellCenterWorld(step.Face, step.X, step.Y));
-                if (CamerFrom.Contains(step))
+                if (CameFrom.Contains(step))
                 {
                     step = CameFrom[step];
                 }
@@ -121,7 +123,7 @@ bool UMazeNavigator::FindPath(FVector StartPos, FVector EndPos, TArray<FVector> 
                 // add to the open set if not already there
                 if (!OpenSet.Contains(Next))
                 {
-                    OpenSet.HeapPush(Next, [](const FMazeNode &A, const FMazeNode &B)
+                    OpenSet.HeapPush(Next, [&](const FMazeNode &A, const FMazeNode &B)
                                      {
                         float CostA = CostSoFar[A] + FVector::Dist(Sphere->GetCellCenterWorld(A.Face, A.X, A.Y), EndPos);
                         float CostB = CostSoFar[B] + FVector::Dist(Sphere->GetCellCenterWorld(B.Face, B.X, B.Y), EndPos);

@@ -9,28 +9,28 @@
 class UMaze;
 class ACubeToSphere;
 
-// defines the node structure for the A* pathfinding algorithm
-USTRUCT(BlueprintType)
-struct FMazeNode
-{
-    GENERATED_BODY()
+// // defines the node structure for the A* pathfinding algorithm
+// USTRUCT(BlueprintType)
+// struct FMazeNode
+// {
+//     GENERATED_BODY()
 
-    UPROPERTY(EditAnywhere, BlueprintReadWrite)
-    int32 Face = -1;
-    UPROPERTY(EditAnywhere, BlueprintReadWrite)
-    int32 X = -1;
-    UPROPERTY(EditAnywhere, BlueprintReadWrite)
-    int32 Y = -1;
+//     UPROPERTY(EditAnywhere, BlueprintReadWrite)
+//     int32 Face = -1;
+//     UPROPERTY(EditAnywhere, BlueprintReadWrite)
+//     int32 X = -1;
+//     UPROPERTY(EditAnywhere, BlueprintReadWrite)
+//     int32 Y = -1;
 
-    FMazeNode() {}
-    FMazeNode(int32 InFace, int32 InX, int32Y InY) : Face(InFace), X(InX), Y(InY) {}
+//     FMazeNode() {}
+//     FMazeNode(int32 InFace, int32 InX, int32Y InY) : Face(InFace), X(InX), Y(InY) {}
 
-    // equality operator for comparing two FMazeNode instances
-    bool operator==(const FMazeNode &Other) const
-    {
-        return Face == Other.Face && X == Other.X && Y == Other.Y;
-    }
-};
+//     // equality operator for comparing two FMazeNode instances
+//     bool operator==(const FMazeNode &Other) const
+//     {
+//         return Face == Other.Face && X == Other.X && Y == Other.Y;
+//     }
+// };
 
 // hashing function for TMap and TSet
 FORCEINLINE uint32 GetTypeHash(const FMazeNode &Node)

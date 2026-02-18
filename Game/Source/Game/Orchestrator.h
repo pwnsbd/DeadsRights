@@ -42,6 +42,10 @@ public:
 								 int32 MaxTries = 5000) const;
 	void ResolveSphereFromChild();
 
+	// implements navigator interface for AI pathfinding
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "AI")
+	UMazeNavigator *Navigator;
+
 	// ---- References ----
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Refs")
 	ACubeToSphere *SphereActor = nullptr;

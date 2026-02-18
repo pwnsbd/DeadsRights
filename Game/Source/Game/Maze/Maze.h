@@ -19,39 +19,39 @@ public:
 	// ---- Parameters ----
 
 	// Number of cells per face (face grid resolution)
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Maze")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Maze")
 	int32 CellsPerFace = 32;
-	
+
 	// How many portals per shared border
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Maze")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Maze")
 	int32 CorridorsPerBorder = 20;
 
 	// Seed used to generate deterministic mazes
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Maze")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Maze")
 	int32 Seed = 12345;
 
 	// Flat storage for all 6 faces
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Maze")
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Maze")
 	TArray<FMazeCell> Cells;
 
 public:
 	// ---- Public API ----
 
 	// Generate maze for all faces + stitch between faces
-	UFUNCTION(BlueprintCallable, Category="Maze")
+	UFUNCTION(BlueprintCallable, Category = "Maze")
 	void Generate();
 
 	// Access a cell (returns Empty cell if invalid)
-	UFUNCTION(BlueprintCallable, Category="Maze")
-	const FMazeCell& GetCell(int32 Face, int32 X, int32 Y) const;
+	UFUNCTION(BlueprintCallable, Category = "Maze")
+	const FMazeCell &GetCell(int32 Face, int32 X, int32 Y) const;
 
 	// Total number of cells across all faces
-	UFUNCTION(BlueprintPure, Category="Maze")
+	UFUNCTION(BlueprintPure, Category = "Maze")
 	int32 GetTotalCells() const { return 6 * CellsPerFace * CellsPerFace; }
 
-  //Returns a list of valid neighboring nodes that can be traversed to from the input node (used for AI pathfinding)
-  UFUNCTION(BlueprintCallable, Category="Maze")
-  TArray<FMazeNode> GetTraversableNeighbors(const FMazeNode& Node) const; 
+	// Returns a list of valid neighboring nodes that can be traversed to from the input node (used for AI pathfinding)
+	UFUNCTION(BlueprintCallable, Category = "Maze")
+	TArray<FMazeNode> GetTraversableNeighbors(const FMazeNode &Node) const;
 
 private:
 	// Convert (Face, X, Y) to flat index
@@ -74,8 +74,8 @@ private:
 
 	// Open a corridor between two adjacent cells on the same face
 	void OpenBetween(int32 Face, int32 X1, int32 Y1,
-	                 int32 X2, int32 Y2,
-	                 EMazeDir DirFromAtoB);
+					 int32 X2, int32 Y2,
+					 EMazeDir DirFromAtoB);
 
 	// Open corridors between faces (cube layout stitching)
 	void StitchFaces();
