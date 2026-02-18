@@ -56,6 +56,8 @@ public:
 	
 	void SetRadius(float val) { Radius = val; }
 	
+	void SetResolution(int32 resolution) { Resolution = resolution; }
+	
 	// ---- Shape params ----
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="CubeToSphere|Shape")
 	int32 Resolution = 32; // vertices per side (>=2). cells per face = Resolution - 1
