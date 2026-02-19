@@ -1,4 +1,4 @@
-#include "Navigator.h"
+#include "MazeNavigator.h"
 #include "../Maze/Maze.h"
 #include "../Conversion/CubeToSphere.h"
 #include "Kismet/KismetMathLibrary.h"
@@ -10,7 +10,7 @@ void UMazeNavigator::Init(UMaze *InMaze, ACubeToSphere *InSphere)
     Sphere = InSphere;
 }
 
-// brute forsces to find the closest cell (optimize later using math instead of loops)
+// brute forces to find the closest cell (optimize later using math instead of loops)
 FMazeNode UMazeNavigator::WorldToNode(FVector WorldPos) const
 {
     if (!Sphere || !Maze)

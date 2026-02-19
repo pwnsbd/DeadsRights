@@ -3,7 +3,7 @@
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
 // #include "MazeTypes.h"
-#include "AI/Navigator.h"
+#include "AI/MazeNavigator.h"
 #include "Components/ChildActorComponent.h"
 #include "Orchestrator.generated.h"
 

@@ -1,7 +1,7 @@
 #include "Orchestrator.h"
 #include "Components/HierarchicalInstancedStaticMeshComponent.h"
 #include "Components/SceneComponent.h"
-#include "AI/Navigator.h"
+#include "AI/MazeNavigator.h"
 #include "Conversion/CubeToSphere.h"
 #include "Maze/Maze.h"
 
