@@ -65,6 +65,28 @@ public:
  UFUNCTION(BlueprintCallable, Category = "Maze")
  TArray<FMazeNode> GetTraversableNeighbors(const FMazeNode &Node) const;
 
+  // --- Traversal Utilities ---
+  UFUNCTION(BlueprintCallable)
+  FMazeNode GetNeighborCell(
+      const FMazeNode& Node,
+      EMazeDir Dir,
+      bool bIgnoreWalls = true
+  ) const;
+
+  UFUNCTION(BlueprintCallable)
+  TArray<FMazeNode> GetCellsInLine(
+      const FMazeNode& Start,
+      EMazeDir Dir,
+      int32 Distance,
+      bool bIgnoreWalls = true
+  ) const;
+
+bool TryFaceTransition(
+    const FMazeNode& Node,
+    EMazeDir Dir,
+    FMazeNode& OutNode
+) const;
+
 
 private:
  // Convert (Face, X, Y) to flat index

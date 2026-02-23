@@ -375,11 +375,6 @@ void UMaze::StitchFaces()
  }
 }
 
-
-
-
-
-
 // AI helper function to get traversable neighbors of a node in the maze graph
 TArray<FMazeNode> UMaze::GetTraversableNeighbors(const FMazeNode& Node) const
 {
@@ -511,4 +506,228 @@ TArray<FMazeNode> UMaze::GetTraversableNeighbors(const FMazeNode& Node) const
 
 
    return Neighbors;
+}
+
+
+
+// Returns the neighboring cell in the given direction, or the same cell if move is invalid (out of bounds or blocked by wall)
+FMazeNode UMaze::GetNeighborCell(
+   const FMazeNode& Node,
+   EMazeDir Dir,
+   bool bIgnoreWalls
+) const
+{
+   int32 nf = Node.Face;
+   int32 nx = Node.X;
+   int32 ny = Node.Y;
+
+
+   // Basic movement
+   switch (Dir)
+   {
+   case EMazeDir::N: ny -= 1; break;
+   case EMazeDir::S: ny += 1; break;
+   case EMazeDir::E: nx += 1; break;
+   case EMazeDir::W: nx -= 1; break;
+   }
+
+
+   // Still inside same face?
+   if (IsValid(nf, nx, ny))
+   {
+       if (bIgnoreWalls)
+       {
+           return FMazeNode{ nf, nx, ny };
+       }
+       else
+       {
+           const FMazeCell& Cell = GetCell(Node.Face, Node.X, Node.Y);
+
+
+           switch (Dir)
+           {
+           case EMazeDir::N: if (!Cell.OpenN) return Node; break;
+           case EMazeDir::S: if (!Cell.OpenS) return Node; break;
+           case EMazeDir::E: if (!Cell.OpenE) return Node; break;
+           case EMazeDir::W: if (!Cell.OpenW) return Node; break;
+           }
+
+
+           return FMazeNode{ nf, nx, ny };
+       }
+   }
+
+
+   // Face transition
+   FMazeNode TransNode;
+   if (TryFaceTransition(Node, Dir, TransNode))
+   {
+       return TransNode;
+   }
+
+
+   return Node; // Invalid move
+}
+
+//Retruns the cells in a line in the given direction until hitting a wall or reaching max distance
+TArray<FMazeNode> UMaze::GetCellsInLine(
+   const FMazeNode& Start,
+   EMazeDir Dir,
+   int32 Distance,
+   bool bIgnoreWalls
+) const
+{
+   TArray<FMazeNode> CellsLine;
+   CellsLine.Reserve(Distance);
+
+
+   FMazeNode Current = Start;
+
+
+   for (int32 i = 0; i < Distance; ++i)
+   {
+       FMazeNode Next = GetNeighborCell(Current, Dir, bIgnoreWalls);
+
+
+       // If no movement occurred, stop
+       if (Next.Face == Current.Face &&
+           Next.X == Current.X &&
+           Next.Y == Current.Y)
+       {
+           break;
+       }
+
+
+       CellsLine.Add(Next);
+       Current = Next;
+   }
+
+
+   return CellsLine;
+}
+
+
+//Helper for TryFaceTransition: checks if moving from Node in Dir would cross to another face, and if so returns the corresponding cell on the new face
+bool UMaze::TryFaceTransition(
+   const FMazeNode& Node,
+   EMazeDir Dir,
+   FMazeNode& OutNode
+) const
+{
+   const int32 Max = CellsPerFace - 1;
+
+
+   // ----------------------------
+   // Middle Ring (Faces 0-3)
+   // ----------------------------
+   if (Node.Face >= 0 && Node.Face <= 3)
+   {
+       if (Dir == EMazeDir::E && Node.X == Max)
+       {
+           OutNode = FMazeNode{ (Node.Face + 1) % 4, 0, Node.Y };
+           return true;
+       }
+
+
+       if (Dir == EMazeDir::W && Node.X == 0)
+       {
+           OutNode = FMazeNode{ (Node.Face + 3) % 4, Max, Node.Y };
+           return true;
+       }
+
+
+       if (Dir == EMazeDir::N && Node.Y == 0)
+       {
+           switch (Node.Face)
+           {
+           case 0: OutNode = FMazeNode{ 4, Node.X, Max }; return true;
+           case 1: OutNode = FMazeNode{ 4, 0, Node.X }; return true;
+           case 2: OutNode = FMazeNode{ 4, Max - Node.X, 0 }; return true;
+           case 3: OutNode = FMazeNode{ 4, Max, Max - Node.X }; return true;
+           }
+       }
+
+
+       if (Dir == EMazeDir::S && Node.Y == Max)
+       {
+           switch (Node.Face)
+           {
+           case 0: OutNode = FMazeNode{ 5, Node.X, 0 }; return true;
+           case 1: OutNode = FMazeNode{ 5, Max, Node.X }; return true;
+           case 2: OutNode = FMazeNode{ 5, Max - Node.X, Max }; return true;
+           case 3: OutNode = FMazeNode{ 5, 0, Max - Node.X }; return true;
+           }
+       }
+   }
+
+
+   // ----------------------------
+   // Top Face (4)
+   // ----------------------------
+   if (Node.Face == 4)
+   {
+       if (Dir == EMazeDir::S && Node.Y == Max)
+       {
+           OutNode = FMazeNode{ 0, Node.X, 0 };
+           return true;
+       }
+
+
+       if (Dir == EMazeDir::W && Node.X == 0)
+       {
+           OutNode = FMazeNode{ 1, Node.Y, 0 };
+           return true;
+       }
+
+
+       if (Dir == EMazeDir::N && Node.Y == 0)
+       {
+           OutNode = FMazeNode{ 2, Max - Node.X, 0 };
+           return true;
+       }
+
+
+       if (Dir == EMazeDir::E && Node.X == Max)
+       {
+           OutNode = FMazeNode{ 3, Max - Node.Y, 0 };
+           return true;
+       }
+   }
+
+
+   // ----------------------------
+   // Bottom Face (5)
+   // ----------------------------
+   if (Node.Face == 5)
+   {
+       if (Dir == EMazeDir::N && Node.Y == 0)
+       {
+           OutNode = FMazeNode{ 0, Node.X, Max };
+           return true;
+       }
+
+
+       if (Dir == EMazeDir::E && Node.X == Max)
+       {
+           OutNode = FMazeNode{ 1, Node.Y, Max };
+           return true;
+       }
+
+
+       if (Dir == EMazeDir::S && Node.Y == Max)
+       {
+           OutNode = FMazeNode{ 2, Max - Node.X, Max };
+           return true;
+       }
+
+
+       if (Dir == EMazeDir::W && Node.X == 0)
+       {
+           OutNode = FMazeNode{ 3, Max - Node.Y, Max };
+           return true;
+       }
+   }
+
+
+   return false;
 }
