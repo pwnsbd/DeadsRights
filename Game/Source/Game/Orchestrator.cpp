@@ -61,17 +61,22 @@ void AOrchestrator::ResolveSphereFromChild()
 		}
 	}
 }
-
+void AOrchestrator::RandomizeSeedNow()
+{
+    Seed = FMath::Rand();
+    Rebuild();
+}
 void AOrchestrator::Rebuild()
 {
-	EnsureMazeGenerated();
+    CellsPerFace = FMath::Max(2, CellsPerFace);
+    Resolution = CellsPerFace + 1;
 
-	// // Init Navigator
-	// if (!Navigator)
-	// {
-	// 	Navigator = NewObject<UMazeNavigator>(this);
-	// }
-	// Navigator->Init(Maze, SphereActor);
+    if (bRandomizeSeed)
+    {
+        Seed = FMath::Rand();
+    }
+
+    EnsureMazeGenerated();
 
 	ResolveSphereFromChild();
 
@@ -93,7 +98,7 @@ void AOrchestrator::EnsureMazeGenerated()
 	}
 
 	// Prefer sphere’s current resolution if it exists
-	const int32 N = SphereActor ? SphereActor->GetCellsPerFace() : FMath::Max(1, CellsPerFace);
+	const int32 N = FMath::Max(2, CellsPerFace);
 
 	Maze->CellsPerFace = N;
 	Maze->Seed = Seed;
