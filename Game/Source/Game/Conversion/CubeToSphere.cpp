@@ -111,7 +111,12 @@ void ACubeToSphere::VertsPerFace(int32 FaceIndex, TArray<FVector>& OutVerts) con
 
 void ACubeToSphere::BuildFaceSection(int32 FaceIndex, const TArray<FVector>& FaceVerts)
 {
-	TArray<FVector> EmptyNormals;
+	// Normalize face vertices
+	TArray<FVector> Normals;
+	for (auto i : FaceVerts)
+	{
+		Normals.Add(i);
+	}
 	TArray<FColor> EmptyColors;
 	TArray<FProcMeshTangent> EmptyTangents;
 
@@ -124,7 +129,7 @@ void ACubeToSphere::BuildFaceSection(int32 FaceIndex, const TArray<FVector>& Fac
 		FaceIndex,
 		FaceVerts,
 		FaceTriangles,
-		EmptyNormals,
+		Normals,
 		FaceUVs,
 		EmptyColors,
 		EmptyTangents,
