@@ -4,6 +4,7 @@
 #include "AI/MazeNavigator.h"
 #include "Conversion/CubeToSphere.h"
 #include "Maze/Maze.h"
+#include "DrawDebugHelpers.h" // A* star testing
 
 AOrchestrator::AOrchestrator()
 {
@@ -83,6 +84,7 @@ void AOrchestrator::Rebuild()
 	}
 
 	BuildWallsFromMaze();
+	Astar();
 }
 
 void AOrchestrator::EnsureMazeGenerated()
@@ -251,5 +253,57 @@ void AOrchestrator::BuildWallsFromMaze()
 					AddWallFromEdgeLocal(A, B);
 			}
 		}
+	}
+}
+
+// hard coded A* star testing
+void AOrchestrator::Astar()
+{
+
+	if (!SphereActor)
+	{
+		UE_LOG(LogTemp, Error, TEXT("A* TEST FAILED: SphereActor is null!"));
+		return; // Stop running this function to prevent a crash
+	}
+
+	FVector StartTest = SphereActor->GetCellCenterWorld(4, 0, 0); // Top pole
+	FVector EndTest = SphereActor->GetCellCenterWorld(4, 20, 20); // Bottom pole
+
+	bool spawnable = IsCellSpawnable(4, 0, 0, 1);
+	UE_LOG(LogTemp, Warning, TEXT("bool1: %s"), spawnable ? TEXT("True") : TEXT("False"));
+
+	spawnable = IsCellSpawnable(4, 20, 20, 1);
+	UE_LOG(LogTemp, Warning, TEXT("bool1: %s"), spawnable ? TEXT("True") : TEXT("False"));
+
+	// DrawDebugSphere(GetWorld(), StartTest, 50.0f, 12, FColor::Blue, true, 20.0f);
+	// DrawDebugSphere(GetWorld(), EndTest, 50.0f, 12, FColor::Red, true, 20.0f);
+	UE_LOG(LogTemp, Warning, TEXT("Start location (Face 0, Cell 0,0): %s"), *StartTest.ToString());
+	UE_LOG(LogTemp, Warning, TEXT("Start location : %s"), *EndTest.ToString());
+
+	TArray<FVector> PathResult;
+
+	if (Navigator != nullptr)
+	{
+		bool bFoundPath = Navigator->FindPath(StartTest, EndTest, PathResult);
+
+		if (bFoundPath)
+		{
+			UE_LOG(LogTemp, Warning, TEXT("A* TEST SUCCESS: Path found with %d steps!"), PathResult.Num());
+
+			// Draw green spheres along the calculated path
+			for (const FVector &Point : PathResult)
+			{
+				DrawDebugSphere(GetWorld(), Point, 25.0f, 12, FColor::Green, true, 20.0f);
+			}
+		}
+		else
+		{
+			// Print a failure message
+			UE_LOG(LogTemp, Error, TEXT("A* TEST FAILED: No valid path between Start and End."));
+		}
+	}
+	else
+	{
+		UE_LOG(LogTemp, Error, TEXT("A* TEST FAILED: Navigator is null!"));
 	}
 }

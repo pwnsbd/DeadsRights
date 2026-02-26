@@ -89,6 +89,9 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Walls")
 	UHierarchicalInstancedStaticMeshComponent *WallHISM = nullptr;
 
+protected: // A* testing
+	void Astar();
+
 protected:
 	// Internal helpers (implemented later)
 	void EnsureMazeGenerated();
