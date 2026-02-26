@@ -64,7 +64,7 @@ void AOrchestrator::ResolveSphereFromChild()
 
 void AOrchestrator::Rebuild()
 {
-	//EnsureMazeGenerated();
+	EnsureMazeGenerated();
 
 	// // Init Navigator
 	// if (!Navigator)
