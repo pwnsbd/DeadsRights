@@ -1,238 +1,228 @@
 #include "Artifact.h"
 #include "../Maze/Maze.h"
 #include "../Conversion/CubeToSphere.h"
+
 #include "Components/StaticMeshComponent.h"
+#include "Components/SphereComponent.h"
 #include "UObject/ConstructorHelpers.h"
-#include "Engine/World.h"
 #include "DrawDebugHelpers.h"
 
+// Sets default values
 AArtifact::AArtifact()
 {
-  PrimaryActorTick.bCanEverTick = true;
+    PrimaryActorTick.bCanEverTick = true;
 
-  // Create the sphere mesh component
-  MeshComponent = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("MeshComponent"));
-  RootComponent = MeshComponent;
+    // Mesh
+    MeshComponent = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("MeshComponent"));
+    RootComponent = MeshComponent;
 
-  // Set up sphere mesh (will use default engine sphere)
-  static ConstructorHelpers::FObjectFinder<UStaticMesh> SphereMesh(TEXT("/Engine/BasicShapes/Sphere"));
-  if (SphereMesh.Succeeded())
-  {
-    MeshComponent->SetStaticMesh(SphereMesh.Object);
-  }
+    // Use a basic sphere mesh from the engine content
+    static ConstructorHelpers::FObjectFinder<UStaticMesh> SphereMesh(TEXT("/Engine/BasicShapes/Sphere"));
+    if (SphereMesh.Succeeded())
+    {
+        MeshComponent->SetStaticMesh(SphereMesh.Object);
+    }
 
-  // Set default scale based on radius
-  MeshComponent->SetWorldScale3D(FVector(SphereRadius / 50.f));
+    // Set default material (can be overridden in editor)
+    MeshComponent->SetWorldScale3D(FVector(SphereRadius / 50.f));
+    MeshComponent->SetSimulatePhysics(false);
+    MeshComponent->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
 
-  // Enable physics simulation when dropped
-  MeshComponent->SetSimulatePhysics(false);
-  MeshComponent->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+    // Pickup Trigger
+    PickupTrigger = CreateDefaultSubobject<USphereComponent>(TEXT("PickupTrigger"));
+    PickupTrigger->InitSphereRadius(100.f);
+    PickupTrigger->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+    PickupTrigger->SetCollisionResponseToAllChannels(ECR_Ignore);
+    PickupTrigger->SetCollisionResponseToChannel(ECC_Pawn, ECR_Overlap);
+    PickupTrigger->SetupAttachment(RootComponent);
+
+    PickupTrigger->OnComponentBeginOverlap.AddDynamic(this, &AArtifact::OnOverlapBegin);
 }
 
+// Called when the game starts or when spawned
 void AArtifact::BeginPlay()
 {
-  Super::BeginPlay();
-
-  InitialLocation = GetActorLocation();
-  AccumulatedTime = 0.f;
+    Super::BeginPlay();
+    InitialLocation = GetActorLocation();
+    CurrentCharges = MaxCharges;
 }
 
+// Called every frame, handles idle animation when not carried
 void AArtifact::Tick(float DeltaTime)
 {
-  Super::Tick(DeltaTime);
+    Super::Tick(DeltaTime);
 
-  // Idle animation when not carried
-  if (!bIsCarried)
-  {
-    AccumulatedTime += DeltaTime;
+    if (!bIsCarried)
+    {
+        AccumulatedTime += DeltaTime;
 
-    // Gentle rotation
-    FRotator NewRotation = GetActorRotation();
-    NewRotation.Yaw += RotationSpeed * DeltaTime;
-    SetActorRotation(NewRotation);
+        FRotator Rot = GetActorRotation();
+        Rot.Yaw += RotationSpeed * DeltaTime;
+        SetActorRotation(Rot);
 
-    // Gentle floating motion
-    FVector NewLocation = InitialLocation;
-    NewLocation.Z += FMath::Sin(AccumulatedTime * FloatSpeed) * FloatAmplitude;
-    SetActorLocation(NewLocation);
-  }
+        FVector Loc = InitialLocation;
+        Loc.Z += FMath::Sin(AccumulatedTime * FloatSpeed) * FloatAmplitude;
+        SetActorLocation(Loc);
+    }
 }
 
-void AArtifact::PickUp(AActor *NewCarrier)
+// Spawns the artifact at a random cell on the sphere
+void AArtifact::SpawnAtRandomCell()
 {
-  if (!NewCarrier)
-  {
-    return;
-  }
+    if (!Maze || !SphereActor)
+        return;
 
-  bIsCarried = true;
-  Carrier = NewCarrier;
+    int32 Face = FMath::RandRange(0, 5);
+    int32 X = FMath::RandRange(0, Maze->CellsPerFace - 1);
+    int32 Y = FMath::RandRange(0, Maze->CellsPerFace - 1);
 
-  // Disable physics and collision when carried
-  MeshComponent->SetSimulatePhysics(false);
-  MeshComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+    CurrentCell = FMazeNode(Face, X, Y);
 
-  // Attach to carrier (can be customized based on socket/bone)
-  AttachToActor(NewCarrier, FAttachmentTransformRules::SnapToTargetNotIncludingScale);
+    FVector SpawnLoc = SphereActor->GetCellCenterWorld(Face, X, Y);
+    SetActorLocation(SpawnLoc);
 
-  UE_LOG(LogTemp, Log, TEXT("Artifact picked up by %s"), *NewCarrier->GetName());
+    InitialLocation = SpawnLoc;
 }
 
+// Handles pickup logic, attaching the artifact to the carrier
+void AArtifact::PickUp(AActor* NewCarrier)
+{
+    if (!NewCarrier) return;
+
+    bIsCarried = true;
+    Carrier = NewCarrier;
+
+    MeshComponent->SetSimulatePhysics(false);
+    MeshComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+
+    AttachToActor(NewCarrier, FAttachmentTransformRules::SnapToTargetNotIncludingScale);
+}
+
+// Handles dropping the artifact, re-enabling physics and collision
 void AArtifact::Drop(FVector DropLocation)
 {
-  bIsCarried = false;
-  Carrier = nullptr;
+    bIsCarried = false;
+    Carrier = nullptr;
 
-  // Detach from carrier
-  DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);
+    DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);
 
-  // Re-enable collision
-  MeshComponent->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
-  MeshComponent->SetSimulatePhysics(true);
+    MeshComponent->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+    MeshComponent->SetSimulatePhysics(true);
 
-  // Set new location
-  SetActorLocation(DropLocation);
-  InitialLocation = DropLocation;
-
-  UE_LOG(LogTemp, Log, TEXT("Artifact dropped at location: %s"), *DropLocation.ToString());
+    SetActorLocation(DropLocation);
+    InitialLocation = DropLocation;
 }
 
-void AArtifact::ActivateAbility(const FMazeNode &StartNode, EMazeDir Direction)
+// Activates the artifact's ability based on the player's current cell and facing direction
+void AArtifact::ActivateAbility()
 {
-  if (!Maze || !SphereActor)
-  {
-    UE_LOG(LogTemp, Warning, TEXT("Artifact: Cannot activate ability - Maze or SphereActor is null"));
-    return;
-  }
+    if (!Carrier || !SphereActor)
+        return;
 
-  switch (ArtifactType)
-  {
-  case EArtifactType::Beam:
-    FireBeam(StartNode, Direction);
-    break;
+    // Check if we have charges left before activating
+    if (CurrentCharges <= 0)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("Artifact out of charges"));
+        return;
+    }
 
-  case EArtifactType::Shield:
-    UE_LOG(LogTemp, Log, TEXT("Shield ability not yet implemented"));
-    break;
+    // Get the player's current cell and facing direction
+    FMazeNode PlayerCell = SphereActor->WorldToMazeCell(Carrier->GetActorLocation());
+    FVector Forward = Carrier->GetActorForwardVector();
+    EMazeDir Dir = SphereActor->GetDirectionFromVector(Forward, PlayerCell);
 
-  case EArtifactType::Teleport:
-    UE_LOG(LogTemp, Log, TEXT("Teleport ability not yet implemented"));
-    break;
+    // Activate the ability from the player's current cell and direction
+    ActivateAbilityFromNode(PlayerCell, Dir);
 
-  case EArtifactType::Vision:
-    UE_LOG(LogTemp, Log, TEXT("Vision ability not yet implemented"));
-    break;
+    // Decrement AFTER successful use
+    CurrentCharges--;
 
-  default:
-    UE_LOG(LogTemp, Warning, TEXT("Unknown artifact type"));
-    break;
-  }
+    UE_LOG(LogTemp, Log, TEXT("Charges remaining: %d"), CurrentCharges);
+
+    if (CurrentCharges <= 0)
+    {
+        UE_LOG(LogTemp, Log, TEXT("Artifact depleted"));
+
+        ArtifactType = EArtifactType::None;
+
+        // Optional: change color to indicate empty
+        MeshComponent->SetMaterial(0, nullptr);
+    }
 }
 
-void AArtifact::FireBeam(const FMazeNode &StartNode, EMazeDir Direction)
+// More direct ability activation, used for testing and potential future AI use
+void AArtifact::ActivateAbilityFromNode(const FMazeNode& StartNode, EMazeDir Direction)
 {
-  if (!Maze || !SphereActor)
-  {
-    return;
-  }
+    if (!Maze) return;
 
-  UE_LOG(LogTemp, Log, TEXT("Firing beam from Face:%d X:%d Y:%d in direction %d"),
-         StartNode.Face, StartNode.X, StartNode.Y, (int32)Direction);
+    switch (ArtifactType)
+    {
+        case EArtifactType::Beam:
+            FireBeam(StartNode, Direction);
+            break;
 
-  // Get all cells in the beam path
-  TArray<FMazeNode> BeamCells = Maze->GetCellsInLine(StartNode, Direction, BeamDistance, true);
+        default:
+            break;
+    }
+}
 
-  // Convert maze nodes to world positions
-  TArray<FVector> BeamPoints;
-  for (const FMazeNode &Cell : BeamCells)
-  {
-    FVector WorldPos = GetWorldPositionFromNode(Cell);
-    BeamPoints.Add(WorldPos);
-  }
+// Core logic for firing the beam, called by ActivateAbilityFromNode
+void AArtifact::FireBeam(const FMazeNode& StartNode, EMazeDir Direction)
+{
+    TArray<FMazeNode> BeamCells = Maze->GetCellsInLine(StartNode, Direction, BeamDistance, true);
 
-  // Draw visual feedback
-  if (BeamPoints.Num() > 0)
-  {
+    TArray<FVector> BeamPoints;
+
+    for (const FMazeNode& Node : BeamCells)
+    {
+        BeamPoints.Add(GetWorldPositionFromNode(Node));
+    }
+
     DrawBeamVisual(BeamPoints);
-    UE_LOG(LogTemp, Log, TEXT("Beam traversed %d cells"), BeamPoints.Num());
-  }
-  else
-  {
-    UE_LOG(LogTemp, Warning, TEXT("Beam did not traverse any cells"));
-  }
 }
 
-FVector AArtifact::GetWorldPositionFromNode(const FMazeNode &Node) const
+// Helper to convert world position to maze cell for visual effects
+FVector AArtifact::GetWorldPositionFromNode(const FMazeNode& Node) const
 {
-  if (!SphereActor)
-  {
-    return FVector::ZeroVector;
-  }
+    if (!SphereActor)
+        return FVector::ZeroVector;
 
-  // Use the CubeToSphere actor to convert maze coordinates to world position
-  return SphereActor->GetCellCenterWorld(Node.Face, Node.X, Node.Y);
+    return SphereActor->GetCellCenterWorld(Node.Face, Node.X, Node.Y);
 }
 
-void AArtifact::DrawBeamVisual(const TArray<FVector> &BeamPoints)
+// Drawing actual beam effect (using debug lines for simplicity)
+void AArtifact::DrawBeamVisual(const TArray<FVector>& BeamPoints)
 {
-  if (BeamPoints.Num() < 2 || !GetWorld())
-  {
-    return;
-  }
+    if (BeamPoints.Num() < 2) return;
 
-  // Convert FLinearColor to FColor for DrawDebugLine
-  FColor DebugColor = BeamColor.ToFColor(true);
+    FColor DebugColor = BeamColor.ToFColor(true);
 
-  // Draw lines connecting all beam points
-  for (int32 i = 0; i < BeamPoints.Num() - 1; ++i)
-  {
-    DrawDebugLine(
-        GetWorld(),
-        BeamPoints[i],
-        BeamPoints[i + 1],
-        DebugColor,
-        false,
-        BeamDuration,
-        0,
-        BeamWidth);
-  }
+    for (int32 i = 0; i < BeamPoints.Num() - 1; ++i)
+    {
+        DrawDebugLine(
+            GetWorld(),
+            BeamPoints[i],
+            BeamPoints[i + 1],
+            DebugColor,
+            false,
+            BeamDuration,
+            0,
+            BeamWidth
+        );
+    }
+}
 
-  // Draw sphere at each point for better visibility
-  for (const FVector &Point : BeamPoints)
-  {
-    DrawDebugSphere(
-        GetWorld(),
-        Point,
-        BeamWidth * 2.f,
-        12,
-        DebugColor,
-        false,
-        BeamDuration);
-  }
+// Overlap event for pickup
+void AArtifact::OnOverlapBegin(
+    UPrimitiveComponent* OverlappedComp,
+    AActor* OtherActor,
+    UPrimitiveComponent* OtherComp,
+    int32 OtherBodyIndex,
+    bool bFromSweep,
+    const FHitResult& SweepResult)
+{
+    if (bIsCarried || !OtherActor)
+        return;
 
-  // Draw a larger sphere at the start point
-  if (BeamPoints.Num() > 0)
-  {
-    DrawDebugSphere(
-        GetWorld(),
-        BeamPoints[0],
-        BeamWidth * 3.f,
-        12,
-        FColor::Yellow,
-        false,
-        BeamDuration);
-  }
-
-  // Draw a larger sphere at the end point
-  if (BeamPoints.Num() > 1)
-  {
-    DrawDebugSphere(
-        GetWorld(),
-        BeamPoints.Last(),
-        BeamWidth * 3.f,
-        12,
-        FColor::Red,
-        false,
-        BeamDuration);
-  }
+    PickUp(OtherActor);
 }
