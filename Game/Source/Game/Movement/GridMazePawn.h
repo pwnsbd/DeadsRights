@@ -12,6 +12,7 @@ class ACubeToSphere;
 class UMaze;
 class UCapsuleComponent;
 class UFloatingPawnMovement;
+class AOrchestrator;
 
 UCLASS()
 class GAME_API AGridMazePawn : public APawn
@@ -33,6 +34,8 @@ private:
 
 	bool TryStep(EMazeDir Dir);
 
+	void SnapToCell();
+
 	bool IsOpen(const FMazeCell& Cell, EMazeDir Dir) const;
 
 	bool FindNearestCellToWorld(
@@ -42,10 +45,21 @@ private:
 		int32& OutY
 	) const;
 
-	FVector GetCellWorld(int32 Face, int32 X, int32 Y) const;
+	// Pure 2D movement rule
+	// If the step goes out of bounds, this maps the coordinate across cube face seams
+	bool MapAcrossEdge(
+		int32 InFace,
+		int32 InX,
+		int32 InY,
+		EMazeDir Dir,
+		int32 N,
+		int32& OutFace,
+		int32& OutX,
+		int32& OutY
+	) const;
 
-	FVector GetNorthTangentWorld() const;
-	FVector GetEastTangentWorld() const;
+	void DumpFaceAscii(int32 FaceToDump) const;
+	void DumpCurrentFaceAscii() const;
 
 private:
 	UPROPERTY(VisibleAnywhere)
@@ -53,6 +67,9 @@ private:
 
 	UPROPERTY(VisibleAnywhere)
 	UFloatingPawnMovement* Movement = nullptr;
+
+	UPROPERTY()
+	AOrchestrator* Orchestrator = nullptr;
 
 public:
 	UPROPERTY(EditAnywhere, Category="Grid")
@@ -65,9 +82,6 @@ public:
 	float StepHeightOffset = 25.0f;
 
 	UPROPERTY(EditAnywhere, Category="Grid")
-	float StepPredictDistance = 15.0f;
-
-	UPROPERTY(EditAnywhere, Category="Grid")
 	int32 StartFace = 0;
 
 	UPROPERTY(EditAnywhere, Category="Grid")
@@ -76,20 +90,20 @@ public:
 	UPROPERTY(EditAnywhere, Category="Grid")
 	int32 StartY = 0;
 
-    UPROPERTY(EditDefaultsOnly, Category="Input")
-    UInputMappingContext* GridInputContext = nullptr;
+	UPROPERTY(EditDefaultsOnly, Category="Input")
+	UInputMappingContext* GridInputContext = nullptr;
 
-    UPROPERTY(EditDefaultsOnly, Category="Input")
-    UInputAction* IA_North = nullptr;
+	UPROPERTY(EditDefaultsOnly, Category="Input")
+	UInputAction* IA_North = nullptr;
 
-    UPROPERTY(EditDefaultsOnly, Category="Input")
-    UInputAction* IA_South = nullptr;
+	UPROPERTY(EditDefaultsOnly, Category="Input")
+	UInputAction* IA_South = nullptr;
 
-    UPROPERTY(EditDefaultsOnly, Category="Input")
-    UInputAction* IA_West = nullptr;
+	UPROPERTY(EditDefaultsOnly, Category="Input")
+	UInputAction* IA_West = nullptr;
 
-    UPROPERTY(EditDefaultsOnly, Category="Input")
-    UInputAction* IA_East = nullptr;
+	UPROPERTY(EditDefaultsOnly, Category="Input")
+	UInputAction* IA_East = nullptr;
 
 private:
 	UPROPERTY(VisibleAnywhere, Category="Grid")

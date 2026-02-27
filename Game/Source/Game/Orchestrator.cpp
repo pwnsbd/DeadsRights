@@ -4,10 +4,12 @@
 #include "AI/Navigator.h"
 #include "Conversion/CubeToSphere.h"
 #include "Maze/Maze.h"
+#include "Kismet/GameplayStatics.h"
+#include "Components/CapsuleComponent.h"
 
 AOrchestrator::AOrchestrator()
 {
-	PrimaryActorTick.bCanEverTick = false;
+	PrimaryActorTick.bCanEverTick = true;
 
 	USceneComponent *Root = CreateDefaultSubobject<USceneComponent>(TEXT("Root"));
 	SetRootComponent(Root);
@@ -25,6 +27,32 @@ void AOrchestrator::OnConstruction(const FTransform &Transform)
 	// Useful for editor iteration
 	Rebuild();
 }
+
+void AOrchestrator::BeginPlay()
+{
+    Super::BeginPlay();
+
+    // Make sure we have a SphereActor even when it's not a child
+    if (!SphereActor)
+    {
+        SphereActor = Cast<ACubeToSphere>(
+            UGameplayStatics::GetActorOfClass(GetWorld(), ACubeToSphere::StaticClass()));
+    }
+
+    // Make sure Maze exists and sphere surface is built for PIEF
+    Rebuild();
+}
+static float GetPawnCapsuleHalfHeight(const APawn* P)
+{
+	if (!P) return 0.f;
+
+	const UCapsuleComponent* Cap = P->FindComponentByClass<UCapsuleComponent>();
+	if (!Cap) return 0.f;
+
+	return Cap->GetScaledCapsuleHalfHeight();
+}
+
+
 
 void AOrchestrator::ResolveSphereFromChild()
 {
@@ -256,5 +284,46 @@ void AOrchestrator::BuildWallsFromMaze()
 					AddWallFromEdgeLocal(A, B);
 			}
 		}
+	}
+}
+void AOrchestrator::RotateMazeToCell(
+	int32 FromFace, int32 FromX, int32 FromY,
+	int32 ToFace,   int32 ToX,   int32 ToY,
+	float Duration
+)
+{
+	if (!SphereActor) return;
+
+	const FVector FromLocal = SphereActor->GetCellCenterLocal(FromFace, FromX, FromY).GetSafeNormal();
+	const FVector ToLocal   = SphereActor->GetCellCenterLocal(ToFace,   ToX,   ToY).GetSafeNormal();
+
+	if (FromLocal.IsNearlyZero() || ToLocal.IsNearlyZero()) return;
+
+	const FQuat Delta = FQuat::FindBetweenNormals(ToLocal, FromLocal);
+
+	RotateStart = GetActorQuat();
+	RotateTarget = Delta * RotateStart;
+
+	RotateElapsed = 0.f;
+	RotateDuration = FMath::Max(0.001f, Duration);
+	bRotatingMaze = true;
+}
+
+void AOrchestrator::Tick(float DeltaSeconds)
+{
+	Super::Tick(DeltaSeconds);
+
+	if (!bRotatingMaze) return;
+
+	RotateElapsed += DeltaSeconds;
+
+	const float Alpha = FMath::Clamp(RotateElapsed / RotateDuration, 0.f, 1.f);
+	const FQuat NewQ = FQuat::Slerp(RotateStart, RotateTarget, Alpha).GetNormalized();
+
+	SetActorRotation(NewQ);
+
+	if (Alpha >= 1.f)
+	{
+		bRotatingMaze = false;
 	}
 }

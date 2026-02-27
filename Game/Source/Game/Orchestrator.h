@@ -92,13 +92,42 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Walls")
 	float WallSurfaceOffset = 1.f;
 
+
+	UFUNCTION(BlueprintCallable, Category="Orchestrator|Refs")
+	UMaze* GetMaze() const { return Maze; }
+
+	UFUNCTION(BlueprintCallable, Category="Orchestrator|Refs")
+	ACubeToSphere* GetSphereActor() const { return SphereActor; }
+
+
+		virtual void Tick(float DeltaSeconds) override;
+
+	UFUNCTION(BlueprintCallable, Category = "Orchestrator|Rotation")
+	void RotateMazeToCell(
+		int32 FromFace, int32 FromX, int32 FromY,
+		int32 ToFace,   int32 ToX,   int32 ToY,
+		float Duration = 0.12f
+	);
+
 protected:
+
+	virtual void BeginPlay() override;
+
+	bool bRotatingMaze = false;
+	float RotateElapsed = 0.f;
+	float RotateDuration = 0.12f;
+
+	FQuat RotateStart;
+	FQuat RotateTarget;
+
+
 	// ---- Owned data/components ----
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Refs")
 	UMaze *Maze = nullptr;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Walls")
 	UHierarchicalInstancedStaticMeshComponent *WallHISM = nullptr;
+
 
 protected:
 	// Internal helpers (implemented later)
