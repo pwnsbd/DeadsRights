@@ -26,17 +26,17 @@ void ACubeToSphere::Build()
 
 void ACubeToSphere::CreateFaceRotations()
 {
-	// Your current rotation set (can be corrected later if needed)
-	if (FaceRotations.Num() != 6)
-	{
-		FaceRotations.SetNum(6);
-		FaceRotations[0] = FRotator( 90, 0,   0); //front 
-		FaceRotations[1] = FRotator(0, 0,   90); // right
-		FaceRotations[2] = FRotator(270, 0,   0); // back
-		FaceRotations[3] = FRotator(  0, 0,   -90); // left  
-		FaceRotations[4] = FRotator(  0, 0,  0);  // top
-		FaceRotations[5] = FRotator(  180, 0, 0); // bottom
-	}
+    if (FaceRotations.Num() != 6)
+    {
+        FaceRotations.SetNum(6);
+
+        FaceRotations[0] = FRotator(0,   0,   0);    // front
+        FaceRotations[1] = FRotator(0,  90,   0);    // right
+        FaceRotations[2] = FRotator(0, 180,   0);    // back
+        FaceRotations[3] = FRotator(0, -90,   0);    // left
+        FaceRotations[4] = FRotator(-90, 0,   0);    // top
+        FaceRotations[5] = FRotator( 90, 0,   0);    // bottom
+    }
 }
 
 void ACubeToSphere::BuildSurface()
