@@ -7,6 +7,9 @@
 #include "Kismet/GameplayStatics.h"
 #include "Components/CapsuleComponent.h"
 
+#include "Engine/TextRenderActor.h"
+#include "Components/TextRenderComponent.h"
+
 AOrchestrator::AOrchestrator()
 {
 	PrimaryActorTick.bCanEverTick = true;
@@ -96,6 +99,11 @@ void AOrchestrator::RandomizeSeedNow()
 }
 void AOrchestrator::Rebuild()
 {
+	UE_LOG(LogTemp, Warning, TEXT("ORCH Rebuild  bShowCellLabels=%d  CellsPerFace=%d  Sphere=%s"),
+		bShowCellLabels ? 1 : 0,
+		CellsPerFace,
+		*GetNameSafe(SphereActor)
+	);
     CellsPerFace = FMath::Max(2, CellsPerFace);
     Resolution = CellsPerFace + 1;
 
@@ -116,6 +124,17 @@ void AOrchestrator::Rebuild()
 	}
 
 	BuildWallsFromMaze();
+
+
+	// Optional heavy debug: spawn labels
+	if (bShowCellLabels)
+	{
+		BuildCellLabels();
+	}
+	else
+	{
+		ClearCellLabels();
+	}
 }
 
 void AOrchestrator::EnsureMazeGenerated()
@@ -327,3 +346,154 @@ void AOrchestrator::Tick(float DeltaSeconds)
 		bRotatingMaze = false;
 	}
 }
+
+void AOrchestrator::ClearCellLabels()
+{
+
+	if (GEngine)
+	{
+		GEngine->AddOnScreenDebugMessage(
+			-1,
+			2.0f,
+			FColor::Yellow,
+			FString::Printf(TEXT("ClearCellLabels RUNNING  Count=%d"), CellLabelActors.Num())
+		);
+	}		
+    static const FName LabelTag(TEXT("DBG_CellLabel"));
+
+    // 1. Destroy what we tracked
+    for (ATextRenderActor* A : CellLabelActors)
+    {
+        if (IsValid(A))
+        {
+            A->Destroy();
+        }
+    }
+    CellLabelActors.Reset();
+
+    // 2. Destroy any leftovers by tag
+    UWorld* World = GetWorld();
+    if (!World)
+        return;
+
+    TArray<AActor*> Tagged;
+    UGameplayStatics::GetAllActorsWithTag(World, LabelTag, Tagged);
+
+    for (AActor* A : Tagged)
+    {
+        if (IsValid(A))
+        {
+            A->Destroy();
+        }
+    }
+}
+
+void AOrchestrator::BuildCellLabels()
+{
+    UE_LOG(LogTemp, Warning, TEXT("BuildCellLabels called  Sphere=%s  CellsPerFace=%d  Step=%d"),
+        *GetNameSafe(SphereActor), CellsPerFace, LabelStep);
+
+    ClearCellLabels();
+
+    // If SphereActor got stale or was never set, try to resolve it again
+    if (!IsValid(SphereActor))
+    {
+        ResolveSphereFromChild();
+    }
+
+    if (!IsValid(SphereActor))
+    {
+        UE_LOG(LogTemp, Warning, TEXT("BuildCellLabels early out. SphereActor invalid"));
+        return;
+    }
+
+    UWorld* World = GetWorld();
+    if (!World)
+        return;
+
+    const int32 N = FMath::Max(2, CellsPerFace);
+    const int32 Step = FMath::Max(1, LabelStep);
+
+    // IMPORTANT: cell centers are local to the SphereActor
+    const FTransform SphereXform = SphereActor->GetActorTransform();
+    const FVector SphereCenterWorld = SphereXform.TransformPosition(FVector::ZeroVector);
+
+    static const FName LabelTag(TEXT("DBG_CellLabel"));
+
+    auto SpawnOne = [&](int32 Face, int32 X, int32 Y)
+    {
+        const FVector CenterLocal = SphereActor->GetCellCenterLocal(Face, X, Y);
+        FVector CenterWorld = SphereXform.TransformPosition(CenterLocal);
+
+        // push outward so it sits on the surface
+        FVector Up = (CenterWorld - SphereCenterWorld).GetSafeNormal();
+        if (Up.IsNearlyZero())
+        {
+            Up = FVector::UpVector;
+        }
+        CenterWorld += Up * LabelSurfaceOffset;
+
+        // TextRender faces its +X axis, so align +X to the outward normal
+        const FRotator TextRot = FRotationMatrix::MakeFromX(Up).Rotator();
+
+        FActorSpawnParameters Params;
+        Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+        Params.Owner = this;
+
+        ATextRenderActor* TextActor = World->SpawnActor<ATextRenderActor>(
+            ATextRenderActor::StaticClass(),
+            CenterWorld,
+            TextRot,
+            Params
+        );
+
+        if (!IsValid(TextActor))
+            return;
+
+        TextActor->Tags.Add(LabelTag);
+
+        if (UTextRenderComponent* TR = TextActor->GetTextRender())
+        {
+            const int32 Index = Face * (N * N) + (Y * N) + X;
+
+            TR->SetText(FText::FromString(FString::Printf(TEXT("%d"), Index)));
+            TR->SetHorizontalAlignment(EHorizTextAligment::EHTA_Center);
+            TR->SetVerticalAlignment(EVerticalTextAligment::EVRTA_TextCenter);
+            TR->SetWorldSize(LabelWorldSize);
+            TR->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+
+            // Helpful so it still shows when small
+            TR->SetMobility(EComponentMobility::Movable);
+        }
+
+        CellLabelActors.Add(TextActor);
+		#if WITH_EDITORONLY_DATA
+		TextActor->SetFolderPath(FName(TEXT("Debug/CellLabels")));
+		#endif
+    };
+
+    if (bLabelSingleFace)
+    {
+        const int32 Face = FMath::Clamp(LabelFace, 0, 5);
+        for (int32 Y = 0; Y < N; Y += Step)
+        {
+            for (int32 X = 0; X < N; X += Step)
+            {
+                SpawnOne(Face, X, Y);
+            }
+        }
+        return;
+    }
+
+    for (int32 Face = 0; Face < 6; ++Face)
+    {
+        for (int32 Y = 0; Y < N; Y += Step)
+        {
+            for (int32 X = 0; X < N; X += Step)
+            {
+                SpawnOne(Face, X, Y);
+            }
+        }
+    }
+}
+
