@@ -30,7 +30,7 @@ void ACubeToSphere::CreateFaceRotations()
 	if (FaceRotations.Num() != 6)
 	{
 		FaceRotations.SetNum(6);
-		FaceRotations[0] = FRotator(90, 0, 0);	// front
+		FaceRotations[0] = FRotator(90, 0, 90); // front
 		FaceRotations[1] = FRotator(0, 0, 90);	// right
 		FaceRotations[2] = FRotator(270, 0, 0); // back
 		FaceRotations[3] = FRotator(0, 0, -90); // left
