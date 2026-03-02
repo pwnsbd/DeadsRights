@@ -90,6 +90,7 @@ protected:
 	UHierarchicalInstancedStaticMeshComponent *WallHISM = nullptr;
 
 protected: // A* testing
+	virtual void BeginPlay() override;
 	void Astar();
 
 protected:

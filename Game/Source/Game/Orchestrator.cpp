@@ -29,62 +29,73 @@ void AOrchestrator::OnConstruction(const FTransform &Transform)
 
 void AOrchestrator::ResolveSphereFromChild()
 {
-	if (SphereActor)
-		return;
+	// 1. Clear the pointer so we don't accidentally hold onto a "dead" editor sphere
+	SphereActor = nullptr;
 
+	// 2. Ask Unreal to find all Child Actor Components attached to this Blueprint
 	TArray<UChildActorComponent *> ChildComps;
 	GetComponents<UChildActorComponent>(ChildComps);
 
-	// Prefer the one named exactly "sphereCild"
+	// 3. Loop through them and extract the actual CubeToSphere actor
 	for (UChildActorComponent *CAC : ChildComps)
 	{
-		if (!CAC)
-			continue;
+		// Force the child actor to spawn if it hasn't yet
+		if (CAC && CAC->GetChildActor() == nullptr)
+		{
+			CAC->CreateChildActor();
+		}
 
-		if (CAC->GetFName() == FName(TEXT("sphereChild")))
+		if (CAC && CAC->GetChildActor())
 		{
 			SphereActor = Cast<ACubeToSphere>(CAC->GetChildActor());
 			if (SphereActor)
-				return;
-		}
-	}
-
-	// Fallback: if there's only one child actor and it's a CubeToSphere, use it
-	for (UChildActorComponent *CAC : ChildComps)
-	{
-		if (!CAC)
-			continue;
-
-		if (ACubeToSphere *AsSphere = Cast<ACubeToSphere>(CAC->GetChildActor()))
-		{
-			SphereActor = AsSphere;
-			return;
+			{
+				return; // We successfully found and linked it!
+			}
 		}
 	}
 }
 
 void AOrchestrator::Rebuild()
 {
+	// 1. ALWAYS find the blueprint's child actor first
+	ResolveSphereFromChild();
+
+	// If it's still null, safely abort so we don't crash
+	if (!SphereActor)
+		return;
+
+	// 2. Lock the Sphere's resolution
+	Resolution = CellsPerFace + 1;
+
+	// 3. Build the floor
+	SphereActor->SetRadius(SphereRadius);
+	SphereActor->SetResolution(Resolution);
+	SphereActor->BuildSurface();
+
+	// 4. Generate the logical maze grid
 	EnsureMazeGenerated();
 
-	// Init Navigator
+	// 5. Draw the physical walls
+	BuildWallsFromMaze();
+
+	// 6. Initialize the AI brain
 	if (!Navigator)
 	{
 		Navigator = NewObject<UMazeNavigator>(this);
 	}
 	Navigator->Init(Maze, SphereActor);
 
-	ResolveSphereFromChild();
-
-	if (SphereActor)
-	{
-		SphereActor->SetRadius(SphereRadius);
-		SphereActor->SetResolution(Resolution);
-		SphereActor->BuildSurface();
-	}
-
-	BuildWallsFromMaze();
+	// 7. Draw the path!
 	Astar();
+}
+
+void AOrchestrator::BeginPlay()
+{
+	Super::BeginPlay();
+
+	// When you hit Play, force the blueprint to rebuild the Live maze and run A*!
+	Rebuild();
 }
 
 void AOrchestrator::EnsureMazeGenerated()
@@ -94,10 +105,8 @@ void AOrchestrator::EnsureMazeGenerated()
 		Maze = NewObject<UMaze>(this);
 	}
 
-	// Prefer sphere’s current resolution if it exists
-	const int32 N = SphereActor ? SphereActor->GetCellsPerFace() : FMath::Max(1, CellsPerFace);
-
-	Maze->CellsPerFace = N;
+	// The Orchestrator is the boss. Force the maze to use our exact variable!
+	Maze->CellsPerFace = CellsPerFace;
 	Maze->Seed = Seed;
 	Maze->Generate();
 }
@@ -256,54 +265,50 @@ void AOrchestrator::BuildWallsFromMaze()
 	}
 }
 
-// hard coded A* star testing
 void AOrchestrator::Astar()
 {
-
 	if (!SphereActor)
 	{
 		UE_LOG(LogTemp, Error, TEXT("A* TEST FAILED: SphereActor is null!"));
-		return; // Stop running this function to prevent a crash
+		return;
 	}
 
-	FVector StartTest = SphereActor->GetCellCenterWorld(4, 0, 0); // Top pole
-	FVector EndTest = SphereActor->GetCellCenterWorld(4, 20, 20); // Bottom pole
+	// 1. Erase the old paths so the viewport stays clean
+	FlushPersistentDebugLines(GetWorld());
 
-	bool spawnable = IsCellSpawnable(4, 0, 0, 1);
-	UE_LOG(LogTemp, Warning, TEXT("bool1: %s"), spawnable ? TEXT("True") : TEXT("False"));
+	// 2. Get the dynamically sized max cell!
+	int32 MaxCell = SphereActor->GetCellsPerFace() - 1;
 
-	spawnable = IsCellSpawnable(4, 20, 20, 1);
-	UE_LOG(LogTemp, Warning, TEXT("bool1: %s"), spawnable ? TEXT("True") : TEXT("False"));
+	// 3. Connect the absolute corners of Face 4
+	FVector StartPos = SphereActor->GetCellCenterWorld(4, 1, 1);
+	FVector EndPos = SphereActor->GetCellCenterWorld(4, MaxCell / 2, MaxCell / 2);
 
-	// DrawDebugSphere(GetWorld(), StartTest, 50.0f, 12, FColor::Blue, true, 20.0f);
-	// DrawDebugSphere(GetWorld(), EndTest, 50.0f, 12, FColor::Red, true, 20.0f);
-	UE_LOG(LogTemp, Warning, TEXT("Start location (Face 0, Cell 0,0): %s"), *StartTest.ToString());
-	UE_LOG(LogTemp, Warning, TEXT("Start location : %s"), *EndTest.ToString());
+	UE_LOG(LogTemp, Warning, TEXT("StartPos (Blue) is at: %s"), *StartPos.ToString());
+	UE_LOG(LogTemp, Warning, TEXT("EndPos (Red) is at: %s"), *EndPos.ToString());
+
+	// 4. Draw them smaller (Radius 15 instead of 30) so they don't eat the green spheres!
+	DrawDebugSphere(GetWorld(), StartPos, 30.0f, 12, FColor::Blue, true, 20.0f);
+	DrawDebugSphere(GetWorld(), EndPos, 30.0f, 12, FColor::Red, true, 20.0f);
 
 	TArray<FVector> PathResult;
 
 	if (Navigator != nullptr)
 	{
-		bool bFoundPath = Navigator->FindPath(StartTest, EndTest, PathResult);
+		bool bFoundPath = Navigator->FindPath(StartPos, EndPos, PathResult);
 
 		if (bFoundPath)
 		{
 			UE_LOG(LogTemp, Warning, TEXT("A* TEST SUCCESS: Path found with %d steps!"), PathResult.Num());
 
-			// Draw green spheres along the calculated path
+			// 5. Draw the green spheres matching the exact size (Radius 15)
 			for (const FVector &Point : PathResult)
 			{
-				DrawDebugSphere(GetWorld(), Point, 25.0f, 12, FColor::Green, true, 20.0f);
+				DrawDebugSphere(GetWorld(), Point, 15.0f, 12, FColor::Green, true, 20.0f);
 			}
 		}
 		else
 		{
-			// Print a failure message
 			UE_LOG(LogTemp, Error, TEXT("A* TEST FAILED: No valid path between Start and End."));
 		}
-	}
-	else
-	{
-		UE_LOG(LogTemp, Error, TEXT("A* TEST FAILED: Navigator is null!"));
 	}
 }

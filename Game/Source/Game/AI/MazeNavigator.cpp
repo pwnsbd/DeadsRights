@@ -42,6 +42,7 @@ FMazeNode UMazeNavigator::WorldToNode(FVector WorldPos) const
 // uses the helper function from maze to get the neighbors of the node that are open and traversable (not walls)
 TArray<FMazeNode> UMazeNavigator::GetNeighbors(const FMazeNode &Node) const
 {
+    // get neighbors of current node
     return Maze->GetTraversableNeighbors(Node);
 }
 
@@ -53,6 +54,11 @@ bool UMazeNavigator::FindPath(FVector StartPos, FVector EndPos, TArray<FVector> 
     // convert world positions to grid nodes
     FMazeNode StartNode = WorldToNode(StartPos);
     FMazeNode EndNode = WorldToNode(EndPos);
+
+    // --- ADD THESE LOGS HERE ---
+    UE_LOG(LogTemp, Warning, TEXT("Inside FindPath - StartNode -> Face: %d | X: %d | Y: %d"), StartNode.Face, StartNode.X, StartNode.Y);
+    UE_LOG(LogTemp, Warning, TEXT("Inside FindPath - EndNode   -> Face: %d | X: %d | Y: %d"), EndNode.Face, EndNode.X, EndNode.Y);
+    // ---------------------------
 
     if (StartNode == EndNode)
         return false; // already at destination
@@ -109,6 +115,11 @@ bool UMazeNavigator::FindPath(FVector StartPos, FVector EndPos, TArray<FVector> 
 
         // get neighbors of current node
         TArray<FMazeNode> Neighbors = GetNeighbors(CurrentNode);
+
+        if (CurrentNode == StartNode)
+        {
+            UE_LOG(LogTemp, Warning, TEXT("Start Node has %d traversable neighbors."), Neighbors.Num());
+        }
 
         // explore neighbors
         for (const FMazeNode &Next : Neighbors)

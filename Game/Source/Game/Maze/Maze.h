@@ -24,7 +24,7 @@ public:
 
 	// How many portals per shared border
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Maze")
-	int32 CorridorsPerBorder = 20;
+	int32 CorridorsPerBorder = 30;
 
 	// Seed used to generate deterministic mazes
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Maze")
