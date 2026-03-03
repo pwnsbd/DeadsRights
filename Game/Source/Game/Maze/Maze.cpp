@@ -191,208 +191,68 @@ void UMaze::CarveDFSSingleFace(int32 TargetFace)
 void UMaze::StitchFaces()
 {
 	FRandomStream StitchRNG(Seed + 1000);
-
 	const int32 MinSpacing = FMath::Max(3, CellsPerFace / 4);
 
 	auto RandOffset = [&](int32 MaxInclusive)
-	{
-		return StitchRNG.RandRange(0, MaxInclusive);
-	};
-
-	auto OpenBorder = [&](int32 F1, int32 X1, int32 Y1, EMazeDir D1,
-						  int32 F2, int32 X2, int32 Y2, EMazeDir D2)
-	{
-		FMazeCell &A = Cells[Index(F1, X1, Y1)];
-		FMazeCell &B = Cells[Index(F2, X2, Y2)];
-
-		// Open A side
-		switch (D1)
-		{
-		case EMazeDir::N:
-			A.OpenN = true;
-			break;
-		case EMazeDir::S:
-			A.OpenS = true;
-			break;
-		case EMazeDir::E:
-			A.OpenE = true;
-			break;
-		case EMazeDir::W:
-			A.OpenW = true;
-			break;
-		}
-
-		// Open B side
-		switch (D2)
-		{
-		case EMazeDir::N:
-			B.OpenN = true;
-			break;
-		case EMazeDir::S:
-			B.OpenS = true;
-			break;
-		case EMazeDir::E:
-			B.OpenE = true;
-			break;
-		case EMazeDir::W:
-			B.OpenW = true;
-			break;
-		}
-	};
-
-	// Helper: get a “spread” position along an edge with some randomness
+	{ return StitchRNG.RandRange(0, MaxInclusive); };
 	auto SpreadPos = [&](int32 i) -> int32
 	{
-		// evenly distributed + small random nudge
 		int32 P = i * (CellsPerFace - 1) / (CorridorsPerBorder + 1);
 		P += RandOffset(MinSpacing / 2);
 		return FMath::Clamp(P, 0, CellsPerFace - 1);
 	};
 
-	// ------------------------
-	// Middle ring: 0-1-2-3-0
-	// ------------------------
+	auto OpenBorder = [&](int32 F1, int32 X1, int32 Y1, EMazeDir D1, int32 F2, int32 X2, int32 Y2, EMazeDir D2)
+	{
+		FMazeCell &A = Cells[Index(F1, X1, Y1)];
+		FMazeCell &B = Cells[Index(F2, X2, Y2)];
 
+		if (D1 == EMazeDir::N)
+			A.OpenN = true;
+		else if (D1 == EMazeDir::S)
+			A.OpenS = true;
+		else if (D1 == EMazeDir::E)
+			A.OpenE = true;
+		else if (D1 == EMazeDir::W)
+			A.OpenW = true;
+		if (D2 == EMazeDir::N)
+			B.OpenN = true;
+		else if (D2 == EMazeDir::S)
+			B.OpenS = true;
+		else if (D2 == EMazeDir::E)
+			B.OpenE = true;
+		else if (D2 == EMazeDir::W)
+			B.OpenW = true;
+	};
+
+	// Middle ring (0-1-2-3-0)
 	for (int32 i = 0; i < CorridorsPerBorder; ++i)
 	{
-		const int32 y = SpreadPos(i);
-		OpenBorder(0, CellsPerFace - 1, y, EMazeDir::E,
-				   1, 0, y, EMazeDir::W);
+		int32 pos = SpreadPos(i);
+		OpenBorder(0, CellsPerFace - 1, pos, EMazeDir::E, 1, 0, pos, EMazeDir::W);
+		OpenBorder(1, CellsPerFace - 1, pos, EMazeDir::E, 2, 0, pos, EMazeDir::W);
+		OpenBorder(2, CellsPerFace - 1, pos, EMazeDir::E, 3, 0, pos, EMazeDir::W);
+		OpenBorder(3, CellsPerFace - 1, pos, EMazeDir::E, 0, 0, pos, EMazeDir::W);
 	}
 
-	for (int32 i = 0; i < CorridorsPerBorder; ++i)
-	{
-		const int32 y = SpreadPos(i);
-		OpenBorder(1, CellsPerFace - 1, y, EMazeDir::E,
-				   2, 0, y, EMazeDir::W);
-	}
-
-	for (int32 i = 0; i < CorridorsPerBorder; ++i)
-	{
-		const int32 y = SpreadPos(i);
-		OpenBorder(2, CellsPerFace - 1, y, EMazeDir::E,
-				   3, 0, y, EMazeDir::W);
-	}
-
-	for (int32 i = 0; i < CorridorsPerBorder; ++i)
-	{
-		const int32 y = SpreadPos(i);
-		OpenBorder(3, CellsPerFace - 1, y, EMazeDir::E,
-				   0, 0, y, EMazeDir::W);
-	}
-
-	// // ------------------------
-	// // Top face connections (4)
-	// // ------------------------
-
-	// for (int32 i = 0; i < CorridorsPerBorder; ++i)
-	// {
-	// 	const int32 x = SpreadPos(i);
-	// 	OpenBorder(0, x, 0,                EMazeDir::N,
-	// 	           4, x, CellsPerFace - 1, EMazeDir::S);
-	// }
-
-	// for (int32 i = 0; i < CorridorsPerBorder; ++i)
-	// {
-	// 	const int32 pos = SpreadPos(i);
-	// 	OpenBorder(1, pos, 0, EMazeDir::N,
-	// 	           4, 0,   pos, EMazeDir::W);
-	// }
-
-	// for (int32 i = 0; i < CorridorsPerBorder; ++i)
-	// {
-	// 	const int32 pos = SpreadPos(i);
-	// 	// Keep your existing mapping (do NOT “correct” yet)
-	// 	OpenBorder(2, pos, 0, EMazeDir::N,
-	// 	           4, CellsPerFace - 1 - pos, 0, EMazeDir::N);
-	// }
-
-	// for (int32 i = 0; i < CorridorsPerBorder; ++i)
-	// {
-	// 	const int32 pos = SpreadPos(i);
-	// 	OpenBorder(3, pos, 0, EMazeDir::N,
-	// 	           4, CellsPerFace - 1, CellsPerFace - 1 - pos, EMazeDir::E);
-	// }
-
-	// // ------------------------
-	// // Bottom face connections (5)
-	// // ------------------------
-
-	// for (int32 i = 0; i < CorridorsPerBorder; ++i)
-	// {
-	// 	const int32 x = SpreadPos(i);
-	// 	OpenBorder(0, x, CellsPerFace - 1, EMazeDir::S,
-	// 	           5, x, 0,                EMazeDir::N);
-	// }
-
-	// for (int32 i = 0; i < CorridorsPerBorder; ++i)
-	// {
-	// 	const int32 pos = SpreadPos(i);
-	// 	OpenBorder(1, pos, CellsPerFace - 1, EMazeDir::S,
-	// 	           5, CellsPerFace - 1, pos, EMazeDir::E);
-	// }
-
-	// for (int32 i = 0; i < CorridorsPerBorder; ++i)
-	// {
-	// 	const int32 pos = SpreadPos(i);
-	// 	// Keep your existing mapping (do NOT “correct” yet)
-	// 	OpenBorder(2, pos, CellsPerFace - 1, EMazeDir::S,
-	// 	           5, CellsPerFace - 1 - pos, CellsPerFace - 1, EMazeDir::S);
-	// }
-
-	// for (int32 i = 0; i < CorridorsPerBorder; ++i)
-	// {
-	// 	const int32 pos = SpreadPos(i);
-	// 	OpenBorder(3, pos, CellsPerFace - 1, EMazeDir::S,
-	// 	           5, 0,   CellsPerFace - 1 - pos, EMazeDir::W);
-	// }
-
-	// ------------------------
 	// Top face connections (4)
-	// ------------------------
 	for (int32 i = 0; i < CorridorsPerBorder; ++i)
 	{
-		const int32 pos = SpreadPos(i);
-		OpenBorder(0, pos, 0, EMazeDir::N, 4, CellsPerFace - 1, pos, EMazeDir::E);
-	}
-	for (int32 i = 0; i < CorridorsPerBorder; ++i)
-	{
-		const int32 pos = SpreadPos(i);
-		OpenBorder(1, pos, 0, EMazeDir::N, 4, pos, CellsPerFace - 1, EMazeDir::S);
-	}
-	for (int32 i = 0; i < CorridorsPerBorder; ++i)
-	{
-		const int32 pos = SpreadPos(i);
-		OpenBorder(2, pos, 0, EMazeDir::N, 4, 0, CellsPerFace - 1 - pos, EMazeDir::W);
-	}
-	for (int32 i = 0; i < CorridorsPerBorder; ++i)
-	{
-		const int32 pos = SpreadPos(i);
-		OpenBorder(3, pos, 0, EMazeDir::N, 4, CellsPerFace - 1 - pos, 0, EMazeDir::N);
+		int32 pos = SpreadPos(i);
+		OpenBorder(0, pos, CellsPerFace - 1, EMazeDir::S, 4, pos, 0, EMazeDir::N);
+		OpenBorder(1, pos, CellsPerFace - 1, EMazeDir::S, 4, CellsPerFace - 1, pos, EMazeDir::E);
+		OpenBorder(2, pos, CellsPerFace - 1, EMazeDir::S, 4, CellsPerFace - 1 - pos, CellsPerFace - 1, EMazeDir::S);
+		OpenBorder(3, pos, CellsPerFace - 1, EMazeDir::S, 4, 0, CellsPerFace - 1 - pos, EMazeDir::W);
 	}
 
-	// ------------------------
 	// Bottom face connections (5)
-	// ------------------------
 	for (int32 i = 0; i < CorridorsPerBorder; ++i)
 	{
-		const int32 pos = SpreadPos(i);
-		OpenBorder(0, pos, CellsPerFace - 1, EMazeDir::S, 5, 0, pos, EMazeDir::W);
-	}
-	for (int32 i = 0; i < CorridorsPerBorder; ++i)
-	{
-		const int32 pos = SpreadPos(i);
-		OpenBorder(1, pos, CellsPerFace - 1, EMazeDir::S, 5, CellsPerFace - 1 - pos, CellsPerFace - 1, EMazeDir::S);
-	}
-	for (int32 i = 0; i < CorridorsPerBorder; ++i)
-	{
-		const int32 pos = SpreadPos(i);
-		OpenBorder(2, pos, CellsPerFace - 1, EMazeDir::S, 5, CellsPerFace - 1, CellsPerFace - 1 - pos, EMazeDir::E);
-	}
-	for (int32 i = 0; i < CorridorsPerBorder; ++i)
-	{
-		const int32 pos = SpreadPos(i);
-		OpenBorder(3, pos, CellsPerFace - 1, EMazeDir::S, 5, pos, 0, EMazeDir::N);
+		int32 pos = SpreadPos(i);
+		OpenBorder(0, pos, 0, EMazeDir::N, 5, pos, CellsPerFace - 1, EMazeDir::S);
+		OpenBorder(1, pos, 0, EMazeDir::N, 5, CellsPerFace - 1, CellsPerFace - 1 - pos, EMazeDir::E);
+		OpenBorder(2, pos, 0, EMazeDir::N, 5, CellsPerFace - 1 - pos, 0, EMazeDir::N);
+		OpenBorder(3, pos, 0, EMazeDir::N, 5, 0, pos, EMazeDir::W);
 	}
 }
 
@@ -407,16 +267,6 @@ TArray<FMazeNode> UMaze::GetTraversableNeighbors(const FMazeNode &Node) const
 
 	const FMazeCell &Cell = GetCell(Node.Face, Node.X, Node.Y); // get the cell data for the input node
 	const int32 Max = CellsPerFace - 1;
-
-	/*
-		Cube Layout (matches StitchFaces):
-
-			   [4]
-		[3] [0] [1] [2]
-			   [5]
-
-		Middle ring: 0 → 1 → 2 → 3 → 0
-	*/
 
 	// Attempt movement in each direction if there's an open corridor - Helper function
 	auto TryAddNeighbor = [&](EMazeDir Dir)
@@ -450,203 +300,119 @@ TArray<FMazeNode> UMaze::GetTraversableNeighbors(const FMazeNode &Node) const
 			return;
 		}
 
-		// Else, If we reach here, we crossed a face boundary and must handle transition logic based on StitchFaces() stitching rules
+		// Else, If we reach here, we crossed a face boundary and must handle transition logic
 
 		// Middle ring (0-3)
 		if (Node.Face >= 0 && Node.Face <= 3)
 		{
 			if (Dir == EMazeDir::E && Node.X == Max)
 			{
-				int32 nextFace = (Node.Face + 1) % 4;
-				Neighbors.Add(FMazeNode(nextFace, 0, Node.Y));
+				Neighbors.Add(FMazeNode((Node.Face + 1) % 4, 0, Node.Y));
 				return;
 			}
 			if (Dir == EMazeDir::W && Node.X == 0)
 			{
-				int32 nextFace = (Node.Face + 3) % 4;
-				Neighbors.Add(FMazeNode(nextFace, Max, Node.Y));
+				Neighbors.Add(FMazeNode((Node.Face + 3) % 4, Max, Node.Y));
 				return;
 			}
 
-			// 	// Top face (4)
-			// 	if (Dir == EMazeDir::N && Node.Y == 0)
-			// 	{
-			// 		switch (Node.Face)
-			// 		{
-			// 		case 0:
-			// 			Neighbors.Add(FMazeNode(4, Node.X, Max));
-			// 			return;
-			// 		case 1:
-			// 			Neighbors.Add(FMazeNode(4, 0, Node.X));
-			// 			return;
-			// 		case 2:
-			// 			Neighbors.Add(FMazeNode(4, Max - Node.X, 0));
-			// 			return;
-			// 		case 3:
-			// 			Neighbors.Add(FMazeNode(4, Max, Max - Node.X));
-			// 			return;
-			// 		}
-			// 	}
-
-			// 	// Bottom face (5)
-			// 	if (Dir == EMazeDir::S && Node.Y == Max)
-			// 	{
-			// 		switch (Node.Face)
-			// 		{
-			// 		case 0:
-			// 			Neighbors.Add(FMazeNode(5, Node.X, 0));
-			// 			return;
-			// 		case 1:
-			// 			Neighbors.Add(FMazeNode(5, Max, Node.X));
-			// 			return;
-			// 		case 2:
-			// 			Neighbors.Add(FMazeNode(5, Max - Node.X, Max));
-			// 			return;
-			// 		case 3:
-			// 			Neighbors.Add(FMazeNode(5, 0, Max - Node.X));
-			// 			return;
-			// 		}
-			// 	}
-			// }
-
-			// // Movement from Top (4)
-			// if (Node.Face == 4)
-			// {
-			// 	if (Dir == EMazeDir::S && Node.Y == Max)
-			// 	{
-			// 		Neighbors.Add(FMazeNode(0, Node.X, 0));
-			// 		return;
-			// 	}
-			// 	if (Dir == EMazeDir::W && Node.X == 0)
-			// 	{
-			// 		Neighbors.Add(FMazeNode(1, Node.Y, 0));
-			// 		return;
-			// 	}
-			// 	if (Dir == EMazeDir::N && Node.Y == 0)
-			// 	{
-			// 		Neighbors.Add(FMazeNode(2, Max - Node.X, 0));
-			// 		return;
-			// 	}
-			// 	if (Dir == EMazeDir::E && Node.X == Max)
-			// 	{
-			// 		Neighbors.Add(FMazeNode(3, Max - Node.Y, 0));
-			// 		return;
-			// 	}
-			// }
-
-			// // Movement from Bottom (5)
-			// if (Node.Face == 5)
-			// {
-			// 	if (Dir == EMazeDir::N && Node.Y == 0)
-			// 	{
-			// 		Neighbors.Add(FMazeNode(0, Node.X, Max));
-			// 		return;
-			// 	}
-			// 	if (Dir == EMazeDir::E && Node.X == Max)
-			// 	{
-			// 		Neighbors.Add(FMazeNode(1, Node.Y, Max));
-			// 		return;
-			// 	}
-			// 	if (Dir == EMazeDir::S && Node.Y == Max)
-			// 	{
-			// 		Neighbors.Add(FMazeNode(2, Max - Node.X, Max));
-			// 		return;
-			// 	}
-			// 	if (Dir == EMazeDir::W && Node.X == 0)
-			// 	{
-			// 		Neighbors.Add(FMazeNode(3, Max - Node.Y, Max));
-			// 		return;
-			// 	}
-			// }
-
-			//------------------------------------------------------------
-			// Top face (4)
-			if (Dir == EMazeDir::N && Node.Y == 0)
+			// Top edge -> Connects to Face 4
+			if (Dir == EMazeDir::S && Node.Y == Max)
 			{
-				switch (Node.Face)
+				if (Node.Face == 0)
 				{
-				case 0:
+					Neighbors.Add(FMazeNode(4, Node.X, 0));
+					return;
+				}
+				if (Node.Face == 1)
+				{
 					Neighbors.Add(FMazeNode(4, Max, Node.X));
 					return;
-				case 1:
-					Neighbors.Add(FMazeNode(4, Node.X, Max));
+				}
+				if (Node.Face == 2)
+				{
+					Neighbors.Add(FMazeNode(4, Max - Node.X, Max));
 					return;
-				case 2:
+				}
+				if (Node.Face == 3)
+				{
 					Neighbors.Add(FMazeNode(4, 0, Max - Node.X));
 					return;
-				case 3:
-					Neighbors.Add(FMazeNode(4, Max - Node.X, 0));
-					return;
 				}
 			}
 
-			// Bottom face (5)
-			if (Dir == EMazeDir::S && Node.Y == Max)
+			// Bottom edge -> Connects to Face 5
+			if (Dir == EMazeDir::N && Node.Y == 0)
 			{
-				switch (Node.Face)
+				if (Node.Face == 0)
 				{
-				case 0:
-					Neighbors.Add(FMazeNode(5, 0, Node.X));
+					Neighbors.Add(FMazeNode(5, Node.X, Max));
 					return;
-				case 1:
-					Neighbors.Add(FMazeNode(5, Max - Node.X, Max));
-					return;
-				case 2:
+				}
+				if (Node.Face == 1)
+				{
 					Neighbors.Add(FMazeNode(5, Max, Max - Node.X));
 					return;
-				case 3:
-					Neighbors.Add(FMazeNode(5, Node.X, 0));
+				}
+				if (Node.Face == 2)
+				{
+					Neighbors.Add(FMazeNode(5, Max - Node.X, 0));
+					return;
+				}
+				if (Node.Face == 3)
+				{
+					Neighbors.Add(FMazeNode(5, 0, Node.X));
 					return;
 				}
 			}
 		}
 
-		// Movement from Top (4)
+		// Face 4 (Top)
 		if (Node.Face == 4)
 		{
+			if (Dir == EMazeDir::N && Node.Y == 0)
+			{
+				Neighbors.Add(FMazeNode(0, Node.X, Max));
+				return;
+			}
 			if (Dir == EMazeDir::E && Node.X == Max)
 			{
-				Neighbors.Add(FMazeNode(0, Node.Y, 0));
+				Neighbors.Add(FMazeNode(1, Node.Y, Max));
 				return;
 			}
 			if (Dir == EMazeDir::S && Node.Y == Max)
 			{
-				Neighbors.Add(FMazeNode(1, Node.X, 0));
+				Neighbors.Add(FMazeNode(2, Max - Node.X, Max));
 				return;
 			}
 			if (Dir == EMazeDir::W && Node.X == 0)
 			{
-				Neighbors.Add(FMazeNode(2, Max - Node.Y, 0));
-				return;
-			}
-			if (Dir == EMazeDir::N && Node.Y == 0)
-			{
-				Neighbors.Add(FMazeNode(3, Max - Node.X, 0));
+				Neighbors.Add(FMazeNode(3, Max - Node.Y, Max));
 				return;
 			}
 		}
 
-		// Movement from Bottom (5)
+		// Face 5 (Bottom)
 		if (Node.Face == 5)
 		{
-			if (Dir == EMazeDir::W && Node.X == 0)
-			{
-				Neighbors.Add(FMazeNode(0, Node.Y, Max));
-				return;
-			}
 			if (Dir == EMazeDir::S && Node.Y == Max)
 			{
-				Neighbors.Add(FMazeNode(1, Max - Node.X, Max));
+				Neighbors.Add(FMazeNode(0, Node.X, 0));
 				return;
 			}
 			if (Dir == EMazeDir::E && Node.X == Max)
 			{
-				Neighbors.Add(FMazeNode(2, Max - Node.Y, Max));
+				Neighbors.Add(FMazeNode(1, Max - Node.Y, 0));
 				return;
 			}
 			if (Dir == EMazeDir::N && Node.Y == 0)
 			{
-				Neighbors.Add(FMazeNode(3, Node.X, Max));
+				Neighbors.Add(FMazeNode(2, Max - Node.X, 0));
+				return;
+			}
+			if (Dir == EMazeDir::W && Node.X == 0)
+			{
+				Neighbors.Add(FMazeNode(3, Node.Y, 0));
 				return;
 			}
 		}

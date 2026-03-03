@@ -17,6 +17,11 @@ AOrchestrator::AOrchestrator()
 	WallHISM->SetupAttachment(Root);
 	WallHISM->SetCollisionProfileName(TEXT("BlockAll"));
 	WallHISM->SetMobility(EComponentMobility::Movable);
+
+	PathHISM = CreateDefaultSubobject<UHierarchicalInstancedStaticMeshComponent>(TEXT("PathHISM"));
+	PathHISM->SetupAttachment(Root);
+	PathHISM->SetCollisionEnabled(ECollisionEnabled::NoCollision); // Ghosts right through it
+	PathHISM->SetMobility(EComponentMobility::Movable);
 }
 
 void AOrchestrator::OnConstruction(const FTransform &Transform)
@@ -296,19 +301,48 @@ void AOrchestrator::Astar()
 	{
 		bool bFoundPath = Navigator->FindPath(StartPos, EndPos, PathResult);
 
+		// If you assigned a mesh in the editor, draw the physical path!
 		if (bFoundPath)
 		{
 			UE_LOG(LogTemp, Warning, TEXT("A* TEST SUCCESS: Path found with %d steps!"), PathResult.Num());
 
-			// 5. Draw the green spheres matching the exact size (Radius 15)
-			for (const FVector &Point : PathResult)
+			// 1. If you used the custom Variable, apply it to the component
+			if (PathHISM && PathMesh)
 			{
-				DrawDebugSphere(GetWorld(), Point, 15.0f, 12, FColor::Green, true, 20.0f);
+				PathHISM->SetStaticMesh(PathMesh);
+
+				if (PathMaterial)
+				{
+					PathHISM->SetMaterial(0, PathMaterial);
+				}
 			}
-		}
-		else
-		{
-			UE_LOG(LogTemp, Error, TEXT("A* TEST FAILED: No valid path between Start and End."));
+
+			// 2. If the component has ANY mesh assigned to it, draw the physical blocks!
+			if (PathHISM && PathHISM->GetStaticMesh())
+			{
+				PathHISM->ClearInstances();
+
+				for (const FVector &Point : PathResult)
+				{
+					FVector LocalPos = GetActorTransform().InverseTransformPosition(Point);
+					FVector UpDir = LocalPos.GetSafeNormal();
+
+					// Push it 30 units up so it physically hovers over the maze walls
+					LocalPos += UpDir * 10.0f;
+
+					// Scale of 0.5 makes them nice and chunky
+					FTransform InstanceTransform(FRotator::ZeroRotator, LocalPos, FVector(0.1f));
+					PathHISM->AddInstance(InstanceTransform);
+				}
+			}
+			else
+			{
+				// 3. Fallback to debug paint only if absolutely no mesh exists
+				for (const FVector &Point : PathResult)
+				{
+					DrawDebugSphere(GetWorld(), Point, 15.0f, 12, FColor::Green, true, 20.0f);
+				}
+			}
 		}
 	}
 }

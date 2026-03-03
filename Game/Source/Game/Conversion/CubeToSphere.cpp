@@ -26,17 +26,21 @@ void ACubeToSphere::Build()
 
 void ACubeToSphere::CreateFaceRotations()
 {
-	// Your current rotation set (can be corrected later if needed)
 	if (FaceRotations.Num() != 6)
 	{
 		FaceRotations.SetNum(6);
-		FaceRotations[0] = FRotator(90, 0, 90); // front
-		FaceRotations[1] = FRotator(0, 0, 90);	// right
-		FaceRotations[2] = FRotator(270, 0, 0); // back
-		FaceRotations[3] = FRotator(0, 0, -90); // left
-		FaceRotations[4] = FRotator(0, 0, 0);	// top
-		FaceRotations[5] = FRotator(180, 0, 0); // bottom
 	}
+
+	// Lock the axes! Up is Z, Right is Y/X, Normal is Outward.
+	// Equator Faces (0, 1, 2, 3)
+	FaceRotations[0] = FRotationMatrix::MakeFromZY(FVector(1, 0, 0), FVector(0, 0, 1)).Rotator();  // Front
+	FaceRotations[1] = FRotationMatrix::MakeFromZY(FVector(0, 1, 0), FVector(0, 0, 1)).Rotator();  // Right
+	FaceRotations[2] = FRotationMatrix::MakeFromZY(FVector(-1, 0, 0), FVector(0, 0, 1)).Rotator(); // Back
+	FaceRotations[3] = FRotationMatrix::MakeFromZY(FVector(0, -1, 0), FVector(0, 0, 1)).Rotator(); // Left
+
+	// Pole Faces (4, 5)
+	FaceRotations[4] = FRotationMatrix::MakeFromZY(FVector(0, 0, 1), FVector(-1, 0, 0)).Rotator(); // Top
+	FaceRotations[5] = FRotationMatrix::MakeFromZY(FVector(0, 0, -1), FVector(1, 0, 0)).Rotator(); // Bottom
 }
 
 void ACubeToSphere::BuildSurface()

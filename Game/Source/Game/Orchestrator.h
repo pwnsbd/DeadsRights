@@ -93,6 +93,15 @@ protected: // A* testing
 	virtual void BeginPlay() override;
 	void Astar();
 
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Path")
+	UHierarchicalInstancedStaticMeshComponent *PathHISM = nullptr;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Path")
+	UStaticMesh *PathMesh = nullptr;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Path")
+	UMaterialInterface *PathMaterial = nullptr;
+
 protected:
 	// Internal helpers (implemented later)
 	void EnsureMazeGenerated();
