@@ -1,10 +1,10 @@
 #include "Orchestrator.h"
-#include "Components/HierarchicalInstancedStaticMeshComponent.h"
 #include "Components/SceneComponent.h"
 #include "AI/MazeNavigator.h"
 #include "Conversion/CubeToSphere.h"
 #include "Maze/Maze.h"
 #include "DrawDebugHelpers.h" // A* star testing
+#include "Components/InstancedStaticMeshComponent.h"
 
 AOrchestrator::AOrchestrator()
 {
@@ -13,14 +13,16 @@ AOrchestrator::AOrchestrator()
 	USceneComponent *Root = CreateDefaultSubobject<USceneComponent>(TEXT("Root"));
 	SetRootComponent(Root);
 
-	WallHISM = CreateDefaultSubobject<UHierarchicalInstancedStaticMeshComponent>(TEXT("WallHISM"));
+	// Change to UInstancedStaticMeshComponent
+	WallHISM = CreateDefaultSubobject<UInstancedStaticMeshComponent>(TEXT("WallHISM"));
 	WallHISM->SetupAttachment(Root);
 	WallHISM->SetCollisionProfileName(TEXT("BlockAll"));
 	WallHISM->SetMobility(EComponentMobility::Movable);
 
-	PathHISM = CreateDefaultSubobject<UHierarchicalInstancedStaticMeshComponent>(TEXT("PathHISM"));
+	// Change to UInstancedStaticMeshComponent
+	PathHISM = CreateDefaultSubobject<UInstancedStaticMeshComponent>(TEXT("PathHISM"));
 	PathHISM->SetupAttachment(Root);
-	PathHISM->SetCollisionEnabled(ECollisionEnabled::NoCollision); // Ghosts right through it
+	PathHISM->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	PathHISM->SetMobility(EComponentMobility::Movable);
 }
 

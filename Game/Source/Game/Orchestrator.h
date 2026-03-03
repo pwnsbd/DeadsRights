@@ -9,7 +9,8 @@
 
 class ACubeToSphere;
 class UMaze;
-class UHierarchicalInstancedStaticMeshComponent;
+// class UHierarchicalInstancedStaticMeshComponent;
+class UInstancedStaticMeshComponent;
 class UStaticMesh;
 
 /**
@@ -89,15 +90,21 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Refs")
 	UMaze *Maze = nullptr;
 
+	// UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Walls")
+	// UHierarchicalInstancedStaticMeshComponent *WallHISM = nullptr;
+
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Walls")
-	UHierarchicalInstancedStaticMeshComponent *WallHISM = nullptr;
+	UInstancedStaticMeshComponent *WallHISM = nullptr;
 
 protected: // A* testing
 	virtual void BeginPlay() override;
 	void Astar();
 
+	// UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Path")
+	// UHierarchicalInstancedStaticMeshComponent *PathHISM = nullptr;
+
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Path")
-	UHierarchicalInstancedStaticMeshComponent *PathHISM = nullptr;
+	UInstancedStaticMeshComponent *PathHISM = nullptr;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Path")
 	UStaticMesh *PathMesh = nullptr;
