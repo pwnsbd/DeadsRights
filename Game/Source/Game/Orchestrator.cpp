@@ -105,6 +105,8 @@ void AOrchestrator::BeginPlay()
 
 void AOrchestrator::EnsureMazeGenerated()
 {
+	if (Maze)
+		return;
 	if (!Maze)
 	{
 		Maze = NewObject<UMaze>(this);

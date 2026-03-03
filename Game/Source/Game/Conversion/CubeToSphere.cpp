@@ -106,8 +106,8 @@ void ACubeToSphere::VertsPerFace(int32 FaceIndex, TArray<FVector> &OutVerts) con
 		FVector V = FaceRot.RotateVector(VLocal);
 
 		// Project cube -> sphere
-		V.Normalize(0.0001f);
-		V *= Radius;
+		 V.Normalize(0.0001f);
+		 V *= Radius;
 
 		OutVerts.Add(V);
 	}
@@ -115,7 +115,18 @@ void ACubeToSphere::VertsPerFace(int32 FaceIndex, TArray<FVector> &OutVerts) con
 
 void ACubeToSphere::BuildFaceSection(int32 FaceIndex, const TArray<FVector> &FaceVerts)
 {
-	TArray<FVector> EmptyNormals;
+	// Normalize face vertices
+	TArray<FVector> Normals;
+	for (auto i : FaceVerts)
+	{
+		if (i.Normalize(0.0001f))
+		{
+			Normals.Add(i);
+		}else
+		{
+			UE_LOG(LogTemp, Warning, TEXT("Not Normalized"));
+		}
+	}
 	TArray<FColor> EmptyColors;
 	TArray<FProcMeshTangent> EmptyTangents;
 
@@ -128,7 +139,7 @@ void ACubeToSphere::BuildFaceSection(int32 FaceIndex, const TArray<FVector> &Fac
 		FaceIndex,
 		FaceVerts,
 		FaceTriangles,
-		EmptyNormals,
+		Normals,
 		FaceUVs,
 		EmptyColors,
 		EmptyTangents,

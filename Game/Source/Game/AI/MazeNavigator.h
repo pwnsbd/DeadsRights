@@ -1,4 +1,4 @@
-#pragma once
+// #pragma once
 
 #include "CoreMinimal.h"
 #include "UObject/NoExportTypes.h"
@@ -9,36 +9,36 @@
 class UMaze;
 class ACubeToSphere;
 
-// hashing function for TMap and TSet
-FORCEINLINE uint32 GetTypeHash(const FMazeNode &Node)
-{
-    return HashCombine(Node.Face, HashCombine(Node.X, Node.Y));
-}
+// // hashing function for TMap and TSet
+// FORCEINLINE uint32 GetTypeHash(const FMazeNode &Node)
+// {
+//     return HashCombine(Node.Face, HashCombine(Node.X, Node.Y));
+// }
 
-// function to calculate path through the maze using A* algorithm
-UCLASS(BlueprintType)
-class GAME_API UMazeNavigator : public UObject
-{
-    GENERATED_BODY()
+// // function to calculate path through the maze using A* algorithm
+// UCLASS(BlueprintType)
+// class GAME_API UMazeNavigator : public UObject
+// {
+//     GENERATED_BODY()
 
-public:
-    // initializes the data and visuals
-    UFUNCTION(BlueprintCallable)
-    void Init(UMaze *InMaze, ACubeToSphere *InSphere);
+// public:
+//     // initializes the data and visuals
+//     UFUNCTION(BlueprintCallable)
+//     void Init(UMaze *InMaze, ACubeToSphere *InSphere);
 
-    // returns a list of world positions to navigate through
-    UFUNCTION(BlueprintCallable)
-    bool FindPath(FVector StartPos, FVector EndPos, TArray<FVector> &OutPath);
+//     // returns a list of world positions to navigate through
+//     UFUNCTION(BlueprintCallable)
+//     bool FindPath(FVector StartPos, FVector EndPos, TArray<FVector> &OutPath);
 
-private:
-    UPROPERTY()
-    UMaze *Maze = nullptr;
-    UPROPERTY()
-    ACubeToSphere *Sphere = nullptr;
+// private:
+//     UPROPERTY()
+//     UMaze *Maze = nullptr;
+//     UPROPERTY()
+//     ACubeToSphere *Sphere = nullptr;
 
-    // helper function
-    TArray<FMazeNode> GetNeighbors(const FMazeNode &Node) const;
+//     // helper function
+//     TArray<FMazeNode> GetNeighbors(const FMazeNode &Node) const;
 
-    // helper to find the closest grid cell
-    FMazeNode WorldToNode(FVector WorldPos) const;
-};
+//     // helper to find the closest grid cell
+//     FMazeNode WorldToNode(FVector WorldPos) const;
+// };

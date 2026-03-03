@@ -34,6 +34,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Orchestrator")
 	void Rebuild();
 
+	// UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "AI")
+	// UMazeNavigator *Navigator;
+
 	// Spawn helper callable from BP
 	UFUNCTION(BlueprintCallable, Category = "Orchestrator|Spawn")
 	bool GetRandomSpawnTransform(FTransform &OutTransform,
