@@ -1,6 +1,8 @@
 #include "MazeArtifactManager.h"
 #include "Artifact.h"
 #include "Engine/World.h"
+#include "Maze/Maze.h"
+#include "Conversion/CubeToSphere.h"
 
 void AMazeArtifactManager::BeginPlay()
 {

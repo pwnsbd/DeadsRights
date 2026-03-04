@@ -5,6 +5,8 @@
 #include "Maze/Maze.h"
 #include "DrawDebugHelpers.h" // A* star testing
 #include "Components/InstancedStaticMeshComponent.h"
+#include "Kismet/GameplayStatics.h"
+#include "Components/CapsuleComponent.h"
 
 AOrchestrator::AOrchestrator()
 {
@@ -127,13 +129,13 @@ void AOrchestrator::Rebuild()
 	Astar();
 }
 
-void AOrchestrator::BeginPlay()
+/*void AOrchestrator::BeginPlay()
 {
 	Super::BeginPlay();
 
 	// When you hit Play, force the blueprint to rebuild the Live maze and run A*!
 	Rebuild();
-}
+}*/
 
 void AOrchestrator::EnsureMazeGenerated()
 {

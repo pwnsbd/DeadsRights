@@ -2,6 +2,8 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
+#include "Maze/Maze.h"
+#include "Conversion/CubeToSphere.h"
 #include "MazeArtifactManager.generated.h"
 
 class AArtifact;
