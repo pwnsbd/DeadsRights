@@ -1,14 +1,10 @@
 #include "Orchestrator.h"
-#include "Components/HierarchicalInstancedStaticMeshComponent.h"
 #include "Components/SceneComponent.h"
-#include "AI/Navigator.h"
+#include "AI/MazeNavigator.h"
 #include "Conversion/CubeToSphere.h"
 #include "Maze/Maze.h"
-#include "Kismet/GameplayStatics.h"
-#include "Components/CapsuleComponent.h"
-
-#include "Engine/TextRenderActor.h"
-#include "Components/TextRenderComponent.h"
+#include "DrawDebugHelpers.h" // A* star testing
+#include "Components/InstancedStaticMeshComponent.h"
 
 AOrchestrator::AOrchestrator()
 {
@@ -17,10 +13,17 @@ AOrchestrator::AOrchestrator()
 	USceneComponent *Root = CreateDefaultSubobject<USceneComponent>(TEXT("Root"));
 	SetRootComponent(Root);
 
-	WallHISM = CreateDefaultSubobject<UHierarchicalInstancedStaticMeshComponent>(TEXT("WallHISM"));
+	// Change to UInstancedStaticMeshComponent
+	WallHISM = CreateDefaultSubobject<UInstancedStaticMeshComponent>(TEXT("WallHISM"));
 	WallHISM->SetupAttachment(Root);
 	WallHISM->SetCollisionProfileName(TEXT("BlockAll"));
 	WallHISM->SetMobility(EComponentMobility::Movable);
+
+	// Change to UInstancedStaticMeshComponent
+	PathHISM = CreateDefaultSubobject<UInstancedStaticMeshComponent>(TEXT("PathHISM"));
+	PathHISM->SetupAttachment(Root);
+	PathHISM->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	PathHISM->SetMobility(EComponentMobility::Movable);
 }
 
 void AOrchestrator::OnConstruction(const FTransform &Transform)
@@ -59,36 +62,29 @@ static float GetPawnCapsuleHalfHeight(const APawn* P)
 
 void AOrchestrator::ResolveSphereFromChild()
 {
-	if (SphereActor)
-		return;
+	// 1. Clear the pointer so we don't accidentally hold onto a "dead" editor sphere
+	SphereActor = nullptr;
 
+	// 2. Ask Unreal to find all Child Actor Components attached to this Blueprint
 	TArray<UChildActorComponent *> ChildComps;
 	GetComponents<UChildActorComponent>(ChildComps);
 
-	// Prefer the one named exactly "sphereCild"
+	// 3. Loop through them and extract the actual CubeToSphere actor
 	for (UChildActorComponent *CAC : ChildComps)
 	{
-		if (!CAC)
-			continue;
+		// Force the child actor to spawn if it hasn't yet
+		if (CAC && CAC->GetChildActor() == nullptr)
+		{
+			CAC->CreateChildActor();
+		}
 
-		if (CAC->GetFName() == FName(TEXT("sphereChild")))
+		if (CAC && CAC->GetChildActor())
 		{
 			SphereActor = Cast<ACubeToSphere>(CAC->GetChildActor());
 			if (SphereActor)
-				return;
-		}
-	}
-
-	// Fallback: if there's only one child actor and it's a CubeToSphere, use it
-	for (UChildActorComponent *CAC : ChildComps)
-	{
-		if (!CAC)
-			continue;
-
-		if (ACubeToSphere *AsSphere = Cast<ACubeToSphere>(CAC->GetChildActor()))
-		{
-			SphereActor = AsSphere;
-			return;
+			{
+				return; // We successfully found and linked it!
+			}
 		}
 	}
 }
@@ -99,42 +95,44 @@ void AOrchestrator::RandomizeSeedNow()
 }
 void AOrchestrator::Rebuild()
 {
-	UE_LOG(LogTemp, Warning, TEXT("ORCH Rebuild  bShowCellLabels=%d  CellsPerFace=%d  Sphere=%s"),
-		bShowCellLabels ? 1 : 0,
-		CellsPerFace,
-		*GetNameSafe(SphereActor)
-	);
-    CellsPerFace = FMath::Max(2, CellsPerFace);
-    Resolution = CellsPerFace + 1;
-
-    if (bRandomizeSeed)
-    {
-        Seed = FMath::Rand();
-    }
-
-    EnsureMazeGenerated();
-
+	// 1. ALWAYS find the blueprint's child actor first
 	ResolveSphereFromChild();
 
-	if (SphereActor)
-	{
-		SphereActor->SetRadius(SphereRadius);
-		SphereActor->SetResolution(Resolution);
-		SphereActor->BuildSurface();
-	}
+	// If it's still null, safely abort so we don't crash
+	if (!SphereActor)
+		return;
 
+	// 2. Lock the Sphere's resolution
+	Resolution = CellsPerFace + 1;
+
+	// 3. Build the floor
+	SphereActor->SetRadius(SphereRadius);
+	SphereActor->SetResolution(Resolution);
+	SphereActor->BuildSurface();
+
+	// 4. Generate the logical maze grid
+	EnsureMazeGenerated();
+
+	// 5. Draw the physical walls
 	BuildWallsFromMaze();
 
+	// 6. Initialize the AI brain
+	if (!Navigator)
+	{
+		Navigator = NewObject<UMazeNavigator>(this);
+	}
+	Navigator->Init(Maze, SphereActor);
 
-	// Optional heavy debug: spawn labels
-	if (bShowCellLabels)
-	{
-		BuildCellLabels();
-	}
-	else
-	{
-		ClearCellLabels();
-	}
+	// 7. Draw the path!
+	Astar();
+}
+
+void AOrchestrator::BeginPlay()
+{
+	Super::BeginPlay();
+
+	// When you hit Play, force the blueprint to rebuild the Live maze and run A*!
+	Rebuild();
 }
 
 void AOrchestrator::EnsureMazeGenerated()
@@ -144,10 +142,8 @@ void AOrchestrator::EnsureMazeGenerated()
 		Maze = NewObject<UMaze>(this);
 	}
 
-	// Prefer sphere’s current resolution if it exists
-	const int32 N = FMath::Max(2, CellsPerFace);
-
-	Maze->CellsPerFace = N;
+	// ALWAYS update these variables and force a regeneration when the slider changes!
+	Maze->CellsPerFace = CellsPerFace;
 	Maze->Seed = Seed;
 	Maze->Generate();
 }
@@ -212,9 +208,22 @@ bool AOrchestrator::GetRandomSpawnTransform(FTransform &OutTransform,
 	const FVector CenterWorld = SphereActor->GetCellCenterWorld(Face, X, Y);
 	const FVector SphereCenter = SphereActor->GetActorLocation();
 
+	// 1. Get the perfectly smooth UP direction from the sphere center
 	const FVector UpDir = (CenterWorld - SphereCenter).GetSafeNormal();
+
+	// 2. Find the exact alignment of the walls!
+	// We check the West wall of this specific cell (which runs North-to-South).
+	FVector EdgeA, EdgeB;
+	SphereActor->GetCellWallEdgeWorld(Face, X, Y, EMazeDir::W, EdgeA, EdgeB);
+
+	// In your grid, EdgeA is the North-West corner, and EdgeB is the South-West corner.
+	// By subtracting B from A, we get a vector pointing perfectly "North" along the hallway.
+	const FVector ForwardDir = (EdgeA - EdgeB).GetSafeNormal();
+
+	// 3. Create a rotation that locks BOTH the Up vector and the Forward vector
+	const FRotator SpawnRot = FRotationMatrix::MakeFromXZ(ForwardDir, UpDir).Rotator();
+
 	const FVector SpawnLoc = CenterWorld + UpDir * (CapsuleHalfHeight + 2.f);
-	const FRotator SpawnRot = FRotationMatrix::MakeFromZ(UpDir).Rotator();
 
 	OutTransform = FTransform(SpawnRot, SpawnLoc, FVector::OneVector);
 	return true;
@@ -305,195 +314,80 @@ void AOrchestrator::BuildWallsFromMaze()
 		}
 	}
 }
-void AOrchestrator::RotateMazeToCell(
-	int32 FromFace, int32 FromX, int32 FromY,
-	int32 ToFace,   int32 ToX,   int32 ToY,
-	float Duration
-)
+
+void AOrchestrator::Astar()
 {
-	if (!SphereActor) return;
-
-	const FVector FromLocal = SphereActor->GetCellCenterLocal(FromFace, FromX, FromY).GetSafeNormal();
-	const FVector ToLocal   = SphereActor->GetCellCenterLocal(ToFace,   ToX,   ToY).GetSafeNormal();
-
-	if (FromLocal.IsNearlyZero() || ToLocal.IsNearlyZero()) return;
-
-	const FQuat Delta = FQuat::FindBetweenNormals(ToLocal, FromLocal);
-
-	RotateStart = GetActorQuat();
-	RotateTarget = Delta * RotateStart;
-
-	RotateElapsed = 0.f;
-	RotateDuration = FMath::Max(0.001f, Duration);
-	bRotatingMaze = true;
-}
-
-void AOrchestrator::Tick(float DeltaSeconds)
-{
-	Super::Tick(DeltaSeconds);
-
-	if (!bRotatingMaze) return;
-
-	RotateElapsed += DeltaSeconds;
-
-	const float Alpha = FMath::Clamp(RotateElapsed / RotateDuration, 0.f, 1.f);
-	const FQuat NewQ = FQuat::Slerp(RotateStart, RotateTarget, Alpha).GetNormalized();
-
-	SetActorRotation(NewQ);
-
-	if (Alpha >= 1.f)
+	if (!SphereActor)
 	{
-		bRotatingMaze = false;
+		UE_LOG(LogTemp, Error, TEXT("A* TEST FAILED: SphereActor is null!"));
+		return;
+	}
+
+	// 1. Erase the old paths so the viewport stays clean
+	FlushPersistentDebugLines(GetWorld());
+
+	// 2. Get the dynamically sized max cell!
+	int32 MaxCell = SphereActor->GetCellsPerFace() - 1;
+
+	// 3. Connect the absolute corners of Face 4
+	FVector StartPos = SphereActor->GetCellCenterWorld(1, MaxCell / 2, MaxCell / 2);
+	FVector EndPos = SphereActor->GetCellCenterWorld(0, MaxCell / 2, MaxCell / 2);
+
+	UE_LOG(LogTemp, Warning, TEXT("StartPos (Blue) is at: %s"), *StartPos.ToString());
+	UE_LOG(LogTemp, Warning, TEXT("EndPos (Red) is at: %s"), *EndPos.ToString());
+
+	// 4. Draw them smaller (Radius 15 instead of 30) so they don't eat the green spheres!
+	DrawDebugSphere(GetWorld(), StartPos, 30.0f, 12, FColor::Blue, true, 20.0f);
+	DrawDebugSphere(GetWorld(), EndPos, 30.0f, 12, FColor::Red, true, 20.0f);
+
+	TArray<FVector> PathResult;
+
+	if (Navigator != nullptr)
+	{
+		bool bFoundPath = Navigator->FindPath(StartPos, EndPos, PathResult);
+
+		// If you assigned a mesh in the editor, draw the physical path!
+		if (bFoundPath)
+		{
+			UE_LOG(LogTemp, Warning, TEXT("A* TEST SUCCESS: Path found with %d steps!"), PathResult.Num());
+
+			// 1. If you used the custom Variable, apply it to the component
+			if (PathHISM && PathMesh)
+			{
+				PathHISM->SetStaticMesh(PathMesh);
+
+				if (PathMaterial)
+				{
+					PathHISM->SetMaterial(0, PathMaterial);
+				}
+			}
+
+			// 2. If the component has ANY mesh assigned to it, draw the physical blocks!
+			if (PathHISM && PathHISM->GetStaticMesh())
+			{
+				PathHISM->ClearInstances();
+
+				for (const FVector &Point : PathResult)
+				{
+					FVector LocalPos = GetActorTransform().InverseTransformPosition(Point);
+					FVector UpDir = LocalPos.GetSafeNormal();
+
+					// Push it 30 units up so it physically hovers over the maze walls
+					LocalPos += UpDir * 10.0f;
+
+					// Scale of 0.5 makes them nice and chunky
+					FTransform InstanceTransform(FRotator::ZeroRotator, LocalPos, FVector(0.1f));
+					PathHISM->AddInstance(InstanceTransform);
+				}
+			}
+			else
+			{
+				// 3. Fallback to debug paint only if absolutely no mesh exists
+				for (const FVector &Point : PathResult)
+				{
+					DrawDebugSphere(GetWorld(), Point, 15.0f, 12, FColor::Green, true, 20.0f);
+				}
+			}
+		}
 	}
 }
-
-void AOrchestrator::ClearCellLabels()
-{
-
-	if (GEngine)
-	{
-		GEngine->AddOnScreenDebugMessage(
-			-1,
-			2.0f,
-			FColor::Yellow,
-			FString::Printf(TEXT("ClearCellLabels RUNNING  Count=%d"), CellLabelActors.Num())
-		);
-	}		
-    static const FName LabelTag(TEXT("DBG_CellLabel"));
-
-    // 1. Destroy what we tracked
-    for (ATextRenderActor* A : CellLabelActors)
-    {
-        if (IsValid(A))
-        {
-            A->Destroy();
-        }
-    }
-    CellLabelActors.Reset();
-
-    // 2. Destroy any leftovers by tag
-    UWorld* World = GetWorld();
-    if (!World)
-        return;
-
-    TArray<AActor*> Tagged;
-    UGameplayStatics::GetAllActorsWithTag(World, LabelTag, Tagged);
-
-    for (AActor* A : Tagged)
-    {
-        if (IsValid(A))
-        {
-            A->Destroy();
-        }
-    }
-}
-
-void AOrchestrator::BuildCellLabels()
-{
-    UE_LOG(LogTemp, Warning, TEXT("BuildCellLabels called  Sphere=%s  CellsPerFace=%d  Step=%d"),
-        *GetNameSafe(SphereActor), CellsPerFace, LabelStep);
-
-    ClearCellLabels();
-
-    // If SphereActor got stale or was never set, try to resolve it again
-    if (!IsValid(SphereActor))
-    {
-        ResolveSphereFromChild();
-    }
-
-    if (!IsValid(SphereActor))
-    {
-        UE_LOG(LogTemp, Warning, TEXT("BuildCellLabels early out. SphereActor invalid"));
-        return;
-    }
-
-    UWorld* World = GetWorld();
-    if (!World)
-        return;
-
-    const int32 N = FMath::Max(2, CellsPerFace);
-    const int32 Step = FMath::Max(1, LabelStep);
-
-    // IMPORTANT: cell centers are local to the SphereActor
-    const FTransform SphereXform = SphereActor->GetActorTransform();
-    const FVector SphereCenterWorld = SphereXform.TransformPosition(FVector::ZeroVector);
-
-    static const FName LabelTag(TEXT("DBG_CellLabel"));
-
-    auto SpawnOne = [&](int32 Face, int32 X, int32 Y)
-    {
-        const FVector CenterLocal = SphereActor->GetCellCenterLocal(Face, X, Y);
-        FVector CenterWorld = SphereXform.TransformPosition(CenterLocal);
-
-        // push outward so it sits on the surface
-        FVector Up = (CenterWorld - SphereCenterWorld).GetSafeNormal();
-        if (Up.IsNearlyZero())
-        {
-            Up = FVector::UpVector;
-        }
-        CenterWorld += Up * LabelSurfaceOffset;
-
-        // TextRender faces its +X axis, so align +X to the outward normal
-        const FRotator TextRot = FRotationMatrix::MakeFromX(Up).Rotator();
-
-        FActorSpawnParameters Params;
-        Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-        Params.Owner = this;
-
-        ATextRenderActor* TextActor = World->SpawnActor<ATextRenderActor>(
-            ATextRenderActor::StaticClass(),
-            CenterWorld,
-            TextRot,
-            Params
-        );
-
-        if (!IsValid(TextActor))
-            return;
-
-        TextActor->Tags.Add(LabelTag);
-
-        if (UTextRenderComponent* TR = TextActor->GetTextRender())
-        {
-            const int32 Index = Face * (N * N) + (Y * N) + X;
-
-            TR->SetText(FText::FromString(FString::Printf(TEXT("%d"), Index)));
-            TR->SetHorizontalAlignment(EHorizTextAligment::EHTA_Center);
-            TR->SetVerticalAlignment(EVerticalTextAligment::EVRTA_TextCenter);
-            TR->SetWorldSize(LabelWorldSize);
-            TR->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-
-            // Helpful so it still shows when small
-            TR->SetMobility(EComponentMobility::Movable);
-        }
-
-        CellLabelActors.Add(TextActor);
-		#if WITH_EDITORONLY_DATA
-		TextActor->SetFolderPath(FName(TEXT("Debug/CellLabels")));
-		#endif
-    };
-
-    if (bLabelSingleFace)
-    {
-        const int32 Face = FMath::Clamp(LabelFace, 0, 5);
-        for (int32 Y = 0; Y < N; Y += Step)
-        {
-            for (int32 X = 0; X < N; X += Step)
-            {
-                SpawnOne(Face, X, Y);
-            }
-        }
-        return;
-    }
-
-    for (int32 Face = 0; Face < 6; ++Face)
-    {
-        for (int32 Y = 0; Y < N; Y += Step)
-        {
-            for (int32 X = 0; X < N; X += Step)
-            {
-                SpawnOne(Face, X, Y);
-            }
-        }
-    }
-}
-
