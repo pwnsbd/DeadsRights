@@ -336,8 +336,7 @@ void AGridMazePawn::SnapToCell()
 		? Orchestrator->GetActorTransform()
 		: Sphere->GetActorTransform();
 
-	const FVector CellCenterLocal = Sphere->GetCellCenterLocal(Face, X, Y);
-	const FVector CellCenterWorld = BasisXform.TransformPosition(CellCenterLocal);
+	const FVector CellCenterWorld = Sphere->GetCellCenterWorld(Face, X, Y);
 
 	const FVector SphereCenterWorld = BasisXform.TransformPosition(FVector::ZeroVector);
 	const FVector UpDir = (CellCenterWorld - SphereCenterWorld).GetSafeNormal();
