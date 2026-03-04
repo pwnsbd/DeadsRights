@@ -203,3 +203,90 @@ bool ACubeToSphere::GetCellWallEdgeWorld(int32 Face, int32 CellX, int32 CellY, E
 	OutB = GetActorTransform().TransformPosition(BLocal);
 	return true;
 }
+
+FMazeNode ACubeToSphere::WorldToMazeCell(FVector WorldPosition) const
+{
+	// Convert world position to local space
+	FVector LocalPos = GetActorTransform().InverseTransformPosition(WorldPosition);
+
+	// Project the local position onto the sphere surface
+	FVector NormalizedPos = LocalPos.GetSafeNormal(0.0001f) * Radius;
+
+	const int32 CellsPerFace = GetCellsPerFace();
+
+	// Find the closest face and cell
+	int32 BestFace = 0;
+	int32 BestX = 0;
+	int32 BestY = 0;
+	float BestDistance = FLT_MAX;
+
+	// Check all faces and cells to find the closest match
+	for (int32 Face = 0; Face < 6; ++Face)
+	{
+		for (int32 X = 0; X < CellsPerFace; ++X)
+		{
+			for (int32 Y = 0; Y < CellsPerFace; ++Y)
+			{
+				FVector CellCenter = GetCellCenterLocal(Face, X, Y);
+				float Distance = FVector::DistSquared(NormalizedPos, CellCenter);
+
+				if (Distance < BestDistance)
+				{
+					BestDistance = Distance;
+					BestFace = Face;
+					BestX = X;
+					BestY = Y;
+				}
+			}
+		}
+	}
+
+	return FMazeNode(BestFace, BestX, BestY);
+}
+
+EMazeDir ACubeToSphere::GetDirectionFromVector(FVector ForwardVector, const FMazeNode& CurrentCell) const
+{
+	// Convert forward vector to local space
+	FVector LocalForward = GetActorTransform().InverseTransformVector(ForwardVector).GetSafeNormal();
+
+	// Get the current cell center in local space
+	FVector CellCenter = GetCellCenterLocal(CurrentCell.Face, CurrentCell.X, CurrentCell.Y);
+
+	// Get the cell centers of neighbors in each direction
+	const int32 CellsPerFace = GetCellsPerFace();
+
+	// Sample positions in each direction (approximate)
+	FVector NorthPos = CellCenter;
+	FVector EastPos = CellCenter;
+	FVector SouthPos = CellCenter;
+	FVector WestPos = CellCenter;
+
+	// Use the face rotation to determine local directions
+	if (CurrentCell.Face >= 0 && CurrentCell.Face < 6)
+	{
+		const FRotator FaceRot = FaceRotations[CurrentCell.Face];
+		
+		// Get approximat	e direction vectors in face-local space
+		FVector LocalN = FaceRot.RotateVector(FVector(0, -1, 0));
+		FVector LocalE = FaceRot.RotateVector(FVector(1, 0, 0));
+		FVector LocalS = FaceRot.RotateVector(FVector(0, 1, 0));
+		FVector LocalW = FaceRot.RotateVector(FVector(-1, 0, 0));
+
+		// Calculate dot products to find best matching direction
+		float DotN = FVector::DotProduct(LocalForward, LocalN);
+		float DotE = FVector::DotProduct(LocalForward, LocalE);
+		float DotS = FVector::DotProduct(LocalForward, LocalS);
+		float DotW = FVector::DotProduct(LocalForward, LocalW);
+
+		// Find the direction with the highest dot product
+		float MaxDot = FMath::Max(FMath::Max(DotN, DotE), FMath::Max(DotS, DotW));
+
+		if (MaxDot == DotN) return EMazeDir::N;
+		if (MaxDot == DotE) return EMazeDir::E;
+		if (MaxDot == DotS) return EMazeDir::S;
+		if (MaxDot == DotW) return EMazeDir::W;
+	}
+
+	// Default to North if something goes wrong
+	return EMazeDir::N;
+}
