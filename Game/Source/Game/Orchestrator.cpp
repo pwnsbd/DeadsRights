@@ -300,8 +300,8 @@ void AOrchestrator::Astar()
 	int32 MaxCell = SphereActor->GetCellsPerFace() - 1;
 
 	// 3. Connect the absolute corners of Face 4
-	FVector StartPos = SphereActor->GetCellCenterWorld(1, MaxCell / 2, MaxCell / 2);
-	FVector EndPos = SphereActor->GetCellCenterWorld(0, MaxCell / 2, MaxCell / 2);
+	FVector StartPos = SphereActor->GetCellCenterWorld(3, 1, 1);
+	FVector EndPos = SphereActor->GetCellCenterWorld(4, 5, 5);
 
 	UE_LOG(LogTemp, Warning, TEXT("StartPos (Blue) is at: %s"), *StartPos.ToString());
 	UE_LOG(LogTemp, Warning, TEXT("EndPos (Red) is at: %s"), *EndPos.ToString());
