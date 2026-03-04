@@ -3,13 +3,14 @@
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
 // #include "MazeTypes.h"
-#include "AI/Navigator.h"
+#include "AI/MazeNavigator.h"
 #include "Components/ChildActorComponent.h"
 #include "Orchestrator.generated.h"
 
 class ACubeToSphere;
 class UMaze;
-class UHierarchicalInstancedStaticMeshComponent;
+// class UHierarchicalInstancedStaticMeshComponent;
+class UInstancedStaticMeshComponent;
 class UStaticMesh;
 
 /**
@@ -44,6 +45,10 @@ public:
 								 int32 MinOpenSides = 2,
 								 int32 MaxTries = 5000) const;
 	void ResolveSphereFromChild();
+
+	// implements navigator interface for AI pathfinding
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "AI")
+	UMazeNavigator *Navigator;
 
 	// ---- References ----
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Refs")
@@ -85,8 +90,27 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Refs")
 	UMaze *Maze = nullptr;
 
+	// UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Walls")
+	// UHierarchicalInstancedStaticMeshComponent *WallHISM = nullptr;
+
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Walls")
-	UHierarchicalInstancedStaticMeshComponent *WallHISM = nullptr;
+	UInstancedStaticMeshComponent *WallHISM = nullptr;
+
+protected: // A* testing
+	virtual void BeginPlay() override;
+	void Astar();
+
+	// UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Path")
+	// UHierarchicalInstancedStaticMeshComponent *PathHISM = nullptr;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Path")
+	UInstancedStaticMeshComponent *PathHISM = nullptr;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Path")
+	UStaticMesh *PathMesh = nullptr;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Path")
+	UMaterialInterface *PathMaterial = nullptr;
 
 protected:
 	// Internal helpers (implemented later)
