@@ -100,14 +100,17 @@ void ACubeToSphere::VertsPerFace(int32 FaceIndex, TArray<FVector> &OutVerts) con
 								 ? FaceRotations[FaceIndex]
 								 : FRotator::ZeroRotator;
 
+	// Calculate the "radius" of the raw flat cube before it is spherified
+	const float CubeHalfSize = (Resolution - 1) * GridSpacing * 0.5f;
+
 	for (const FVector &VLocal : FaceGridVertsLocal)
 	{
 		// Rotate face into cube-space
 		FVector V = FaceRot.RotateVector(VLocal);
 
 		// Project cube -> sphere
-		 V.Normalize(0.0001f);
-		 V *= Radius;
+		V.Normalize(0.0001f);
+		V *= Radius;
 
 		OutVerts.Add(V);
 	}
@@ -122,7 +125,8 @@ void ACubeToSphere::BuildFaceSection(int32 FaceIndex, const TArray<FVector> &Fac
 		if (i.Normalize(0.0001f))
 		{
 			Normals.Add(i);
-		}else
+		}
+		else
 		{
 			UE_LOG(LogTemp, Warning, TEXT("Not Normalized"));
 		}
@@ -148,25 +152,36 @@ void ACubeToSphere::BuildFaceSection(int32 FaceIndex, const TArray<FVector> &Fac
 
 FVector ACubeToSphere::GetCellCenterLocal(int32 Face, int32 CellX, int32 CellY) const
 {
-	const int32 CellsPerFace = FMath::Max(1, Resolution - 1);
+	// 1. Safety check to make sure the surface actually exists
+	if (!FaceSphereVerts.IsValidIndex(Face))
+	{
+		return FVector::ZeroVector;
+	}
 
-	Face = FMath::Clamp(Face, 0, 5);
-	CellX = FMath::Clamp(CellX, 0, CellsPerFace - 1);
-	CellY = FMath::Clamp(CellY, 0, CellsPerFace - 1);
+	const TArray<FVector> &FV = FaceSphereVerts[Face];
 
-	const float Half = (Resolution - 1) * GridSpacing * 0.5f;
+	if (FV.Num() != Resolution * Resolution)
+	{
+		return FVector::ZeroVector;
+	}
 
-	FVector P;
-	P.X = (CellX + 0.5f) * GridSpacing - Half;
-	P.Y = (CellY + 0.5f) * GridSpacing - Half;
-	P.Z = 0.f;
+	const int32 N = GetCellsPerFace();
+	if (CellX < 0 || CellX >= N || CellY < 0 || CellY >= N)
+	{
+		return FVector::ZeroVector;
+	}
 
-	P += FVector(0.f, 0.f, Half);
+	// 2. Get the exact, spherified physical 3D corners of the cell
+	const FVector V00 = FV[VertIndex(CellX, CellY)];
+	const FVector V10 = FV[VertIndex(CellX + 1, CellY)];
+	const FVector V01 = FV[VertIndex(CellX, CellY + 1)];
+	const FVector V11 = FV[VertIndex(CellX + 1, CellY + 1)];
 
-	const FRotator FaceRot = FaceRotations.IsValidIndex(Face) ? FaceRotations[Face] : FRotator::ZeroRotator;
-	P = FaceRot.RotateVector(P);
+	// 3. Average them to find the exact dead-center of the rendered hallway
+	FVector CenterPos = (V00 + V10 + V01 + V11) * 0.25f;
 
-	return P.GetSafeNormal(0.0001f) * Radius;
+	// 4. Averaging pulls the center slightly underground, so push it back up to the surface radius!
+	return CenterPos.GetSafeNormal() * Radius;
 }
 
 FVector ACubeToSphere::GetCellCenterWorld(int32 Face, int32 CellX, int32 CellY) const

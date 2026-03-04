@@ -107,14 +107,12 @@ void AOrchestrator::BeginPlay()
 
 void AOrchestrator::EnsureMazeGenerated()
 {
-	if (Maze)
-		return;
 	if (!Maze)
 	{
 		Maze = NewObject<UMaze>(this);
 	}
 
-	// The Orchestrator is the boss. Force the maze to use our exact variable!
+	// ALWAYS update these variables and force a regeneration when the slider changes!
 	Maze->CellsPerFace = CellsPerFace;
 	Maze->Seed = Seed;
 	Maze->Generate();
@@ -180,9 +178,22 @@ bool AOrchestrator::GetRandomSpawnTransform(FTransform &OutTransform,
 	const FVector CenterWorld = SphereActor->GetCellCenterWorld(Face, X, Y);
 	const FVector SphereCenter = SphereActor->GetActorLocation();
 
+	// 1. Get the perfectly smooth UP direction from the sphere center
 	const FVector UpDir = (CenterWorld - SphereCenter).GetSafeNormal();
+
+	// 2. Find the exact alignment of the walls!
+	// We check the West wall of this specific cell (which runs North-to-South).
+	FVector EdgeA, EdgeB;
+	SphereActor->GetCellWallEdgeWorld(Face, X, Y, EMazeDir::W, EdgeA, EdgeB);
+
+	// In your grid, EdgeA is the North-West corner, and EdgeB is the South-West corner.
+	// By subtracting B from A, we get a vector pointing perfectly "North" along the hallway.
+	const FVector ForwardDir = (EdgeA - EdgeB).GetSafeNormal();
+
+	// 3. Create a rotation that locks BOTH the Up vector and the Forward vector
+	const FRotator SpawnRot = FRotationMatrix::MakeFromXZ(ForwardDir, UpDir).Rotator();
+
 	const FVector SpawnLoc = CenterWorld + UpDir * (CapsuleHalfHeight + 2.f);
-	const FRotator SpawnRot = FRotationMatrix::MakeFromZ(UpDir).Rotator();
 
 	OutTransform = FTransform(SpawnRot, SpawnLoc, FVector::OneVector);
 	return true;
