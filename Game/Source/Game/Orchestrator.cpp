@@ -192,6 +192,49 @@ bool AOrchestrator::FindRandomSpawnCell(int32 &OutFace, int32 &OutX, int32 &OutY
 	return false;
 }
 
+
+void AOrchestrator::RotateMazeToCell(
+    int32 FromFace, int32 FromX, int32 FromY,
+    int32 ToFace,   int32 ToX,   int32 ToY,
+    float Duration
+)
+{
+    if (!SphereActor) return;
+
+    const FVector FromLocal = SphereActor->GetCellCenterLocal(FromFace, FromX, FromY).GetSafeNormal();
+    const FVector ToLocal   = SphereActor->GetCellCenterLocal(ToFace,   ToX,   ToY).GetSafeNormal();
+
+    if (FromLocal.IsNearlyZero() || ToLocal.IsNearlyZero()) return;
+
+    const FQuat Delta = FQuat::FindBetweenNormals(ToLocal, FromLocal);
+
+    RotateStart = GetActorQuat();
+    RotateTarget = Delta * RotateStart;
+
+    RotateElapsed = 0.f;
+    RotateDuration = FMath::Max(0.001f, Duration);
+    bRotatingMaze = true;
+}
+
+void AOrchestrator::Tick(float DeltaSeconds)
+{
+    Super::Tick(DeltaSeconds);
+
+    if (!bRotatingMaze) return;
+
+    RotateElapsed += DeltaSeconds;
+
+    const float Alpha = FMath::Clamp(RotateElapsed / RotateDuration, 0.f, 1.f);
+    const FQuat NewQ = FQuat::Slerp(RotateStart, RotateTarget, Alpha).GetNormalized();
+
+    SetActorRotation(NewQ);
+
+    if (Alpha >= 1.f)
+    {
+        bRotatingMaze = false;
+    }
+}
+
 bool AOrchestrator::GetRandomSpawnTransform(FTransform &OutTransform,
 											float CapsuleHalfHeight,
 											int32 MinOpenSides,
