@@ -47,7 +47,7 @@ private:
 
 	// Pure 2D movement rule
 	// If the step goes out of bounds, this maps the coordinate across cube face seams
-	bool MapAcrossEdge(
+	/*bool MapAcrossEdge(
 		int32 InFace,
 		int32 InX,
 		int32 InY,
@@ -56,7 +56,7 @@ private:
 		int32& OutFace,
 		int32& OutX,
 		int32& OutY
-	) const;
+	) const;*/
 
 	void DumpFaceAscii(int32 FaceToDump) const;
 	void DumpCurrentFaceAscii() const;

@@ -124,7 +124,7 @@ bool AGridMazePawn::IsOpen(const FMazeCell& Cell, EMazeDir Dir) const
 	return false;
 }
 
-bool AGridMazePawn::MapAcrossEdge(
+/*bool AGridMazePawn::MapAcrossEdge(
 	int32 InFace,
 	int32 InX,
 	int32 InY,
@@ -258,7 +258,7 @@ bool AGridMazePawn::MapAcrossEdge(
 	}
 
 	return false;
-}
+}*/
 
 bool AGridMazePawn::TryStep(EMazeDir Dir)
 {
@@ -299,7 +299,7 @@ bool AGridMazePawn::TryStep(EMazeDir Dir)
 	if (Dir == EMazeDir::E) NewX++;
 
 	// Cross face seam if needed
-	if (NewX < 0 || NewX >= N || NewY < 0 || NewY >= N)
+	/*if (NewX < 0 || NewX >= N || NewY < 0 || NewY >= N)
 	{
 		if (!MapAcrossEdge(Face, X, Y, Dir, N, NewFace, NewX, NewY))
 		{
@@ -307,7 +307,22 @@ bool AGridMazePawn::TryStep(EMazeDir Dir)
 			PrintFaceNow();
 			return false;
 		}
-	}
+	}*/
+  if (NewX < 0 || NewX >= N || NewY < 0 || NewY >= N)
+  {
+      FMazeNode CurrentNode(Face, X, Y);
+      FMazeNode OutNode;
+
+      if (!Maze->TryFaceTransition(CurrentNode, Dir, OutNode))
+      {
+          UE_LOG(LogTemp, Warning, TEXT("Out of bounds but no seam mapping found"));
+          return false;
+      }
+
+      NewFace = OutNode.Face;
+      NewX = OutNode.X;
+      NewY = OutNode.Y;
+  }
 
 	const int32 OldFace = Face;
 	const int32 OldX = X;
