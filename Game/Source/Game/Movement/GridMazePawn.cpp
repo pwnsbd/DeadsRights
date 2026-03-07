@@ -1,3 +1,7 @@
+#include "Components/StaticMeshComponent.h"
+#include "GameFramework/SpringArmComponent.h"
+#include "Camera/CameraComponent.h"
+
 #include "GridMazePawn.h"
 
 #include "Kismet/GameplayStatics.h"
@@ -14,7 +18,7 @@
 
 AGridMazePawn::AGridMazePawn()
 {
-	PrimaryActorTick.bCanEverTick = false;
+	PrimaryActorTick.bCanEverTick = true;
 
 	Capsule = CreateDefaultSubobject<UCapsuleComponent>(TEXT("Capsule"));
 	SetRootComponent(Capsule);
@@ -24,6 +28,25 @@ AGridMazePawn::AGridMazePawn()
 
 	Movement = CreateDefaultSubobject<UFloatingPawnMovement>(TEXT("Movement"));
 	Movement->SetUpdatedComponent(Capsule);
+
+	PawnMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("PawnMesh"));
+	PawnMesh->SetupAttachment(Capsule);
+	PawnMesh->SetRelativeLocation(FVector(0.f, 0.f, 50.f));
+
+	SpringArm = CreateDefaultSubobject<USpringArmComponent>(TEXT("SpringArm"));
+	SpringArm->SetupAttachment(Capsule);
+	SpringArm->TargetArmLength = 900.f;
+	SpringArm->bDoCollisionTest = false;
+	SpringArm->bUsePawnControlRotation = false;
+	SpringArm->bInheritPitch = false;
+	SpringArm->bInheritYaw = false;
+	SpringArm->bInheritRoll = false;
+	SpringArm->SetUsingAbsoluteRotation(true);
+
+	Camera = CreateDefaultSubobject<UCameraComponent>(TEXT("Camera"));
+	Camera->SetupAttachment(SpringArm, USpringArmComponent::SocketName);
+	Camera->bUsePawnControlRotation = false;
+	Camera->SetActive(true);
 
 	AutoPossessPlayer = EAutoReceiveInput::Player0;
 }
@@ -71,6 +94,18 @@ void AGridMazePawn::BeginPlay()
 
 	UE_LOG(LogTemp, Warning, TEXT("Pawn BeginPlay Sphere=%s Maze=%s Face=%d X=%d Y=%d"),
 		*GetNameSafe(Sphere), *GetNameSafe(Maze), Face, X, Y);
+
+	UpdateCameraToSphereCenter();
+
+	if (APlayerController* PC = GetWorld()->GetFirstPlayerController())
+	{
+		if (PC->GetPawn() != this)
+		{
+			PC->Possess(this);
+		}
+
+		PC->SetViewTargetWithBlend(this, 0.0f);
+	}
 }
 
 void AGridMazePawn::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
@@ -505,4 +540,57 @@ void AGridMazePawn::DumpFaceAscii(int32 FaceToDump) const
 	}
 
 	UE_LOG(LogTemp, Warning, TEXT("END FACE %d"), FaceToDump);
+}
+
+void AGridMazePawn::Tick(float DeltaSeconds)
+{
+	Super::Tick(DeltaSeconds);
+	UpdateCameraToSphereCenter();
+}
+
+void AGridMazePawn::UpdateCameraToSphereCenter()
+{
+	if (!SpringArm || !Sphere)
+	{
+		return;
+	}
+
+	const FTransform BasisXform = Orchestrator
+		? Orchestrator->GetActorTransform()
+		: Sphere->GetActorTransform();
+
+	const FVector SphereCenterWorld = BasisXform.TransformPosition(FVector::ZeroVector);
+	const FVector PawnWorld = GetActorLocation();
+
+	const FVector ToCenter = (PawnWorld - SphereCenterWorld).GetSafeNormal();
+	if (ToCenter.IsNearlyZero())
+	{
+		return;
+	}
+
+	FVector StableUp = FVector::VectorPlaneProject(FVector::UpVector, ToCenter).GetSafeNormal();
+
+	if (StableUp.IsNearlyZero())
+	{
+		StableUp = FVector::VectorPlaneProject(GetActorForwardVector(), ToCenter).GetSafeNormal();
+	}
+
+	if (StableUp.IsNearlyZero())
+	{
+		StableUp = FVector::ForwardVector;
+	}
+
+	const FRotator LookAtCenter = FRotationMatrix::MakeFromXZ(ToCenter, StableUp).Rotator();
+	SpringArm->SetWorldRotation(LookAtCenter);
+}
+
+void AGridMazePawn::CalcCamera(float DeltaTime, FMinimalViewInfo& OutResult)
+{
+	if (Camera && Camera->IsActive())
+	{
+		Camera->GetCameraView(DeltaTime, OutResult);
+		return;
+	}
+
+	Super::CalcCamera(DeltaTime, OutResult);
 }

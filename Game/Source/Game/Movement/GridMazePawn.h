@@ -1,4 +1,7 @@
 #pragma once
+#include "Camera/CameraComponent.h"
+#include "GameFramework/SpringArmComponent.h"
+#include "Components/StaticMeshComponent.h"
 
 #include "CoreMinimal.h"
 #include "GameFramework/Pawn.h"
@@ -7,6 +10,7 @@
 #include "../Maze/MazeTypes.h"
 
 #include "GridMazePawn.generated.h"
+
 
 class ACubeToSphere;
 class UMaze;
@@ -24,7 +28,9 @@ public:
 
 protected:
 	virtual void BeginPlay() override;
+	virtual void Tick(float DeltaSeconds) override;
 	virtual void SetupPlayerInputComponent(UInputComponent* PlayerInputComponent) override;
+	virtual void CalcCamera(float DeltaTime, FMinimalViewInfo& OutResult) override;
 
 private:
 	void StepNorth();
@@ -60,6 +66,8 @@ private:
 
 	void DumpFaceAscii(int32 FaceToDump) const;
 	void DumpCurrentFaceAscii() const;
+
+	void UpdateCameraToSphereCenter();
 
 private:
 	UPROPERTY(VisibleAnywhere)
@@ -104,6 +112,15 @@ public:
 
 	UPROPERTY(EditDefaultsOnly, Category="Input")
 	UInputAction* IA_East = nullptr;
+
+	UPROPERTY(VisibleAnywhere)
+	UStaticMeshComponent* PawnMesh;
+
+	UPROPERTY(VisibleAnywhere)
+	USpringArmComponent* SpringArm;
+
+	UPROPERTY(VisibleAnywhere)
+	UCameraComponent* Camera;
 
 private:
 	UPROPERTY(VisibleAnywhere, Category="Grid")
