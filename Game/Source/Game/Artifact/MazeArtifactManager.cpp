@@ -4,6 +4,17 @@
 #include "Maze/Maze.h"
 #include "Conversion/CubeToSphere.h"
 
+bool IsWithinCellRadius(const FMazeNode& A, const FMazeNode& B, int32 Radius)
+{
+    int32 DX = FMath::Abs(A.X - B.X);
+    int32 DY = FMath::Abs(A.Y - B.Y);
+
+    if (A.Face != B.Face)
+        return false; // keep simple for now
+
+    return (DX <= Radius && DY <= Radius);
+}
+
 void AMazeArtifactManager::BeginPlay()
 {
     Super::BeginPlay();
@@ -12,6 +23,7 @@ void AMazeArtifactManager::BeginPlay()
         return;
 
     UsedCells.Empty();
+    Navigator = NewObject<UMazeNavigator>(this);
 
     // Spawn artifacts at random valid cells
     for (int32 i = 0; i < NumArtifacts; i++)
@@ -30,12 +42,14 @@ void AMazeArtifactManager::BeginPlay()
 
             FMazeNode Candidate(Face, X, Y);
 
-            // Reject if same as player start
-            if (Candidate == PlayerStartCell)
+            // Check if this cell is already used
+            FMazeNode PlayerNode = SphereActor->WorldToMazeCell(PlayerPawn->GetActorLocation());
+            FMazeNode AINode = SphereActor->WorldToMazeCell(AIPawn->GetActorLocation());
+
+            if (IsWithinCellRadius(Candidate, PlayerNode, SpawnSafetyRadius))
                 continue;
 
-            // Reject if already used
-            if (UsedCells.Contains(Candidate))
+            if (IsWithinCellRadius(Candidate, AINode, SpawnSafetyRadius))
                 continue;
 
             SpawnCell = Candidate;
@@ -67,10 +81,14 @@ void AMazeArtifactManager::BeginPlay()
         // Set the artifact's location to the center of the assigned cell
         NewArtifact->SetActorLocation(SpawnLocation);
 
-        // First artifact is Beam
-        if (i == 0)
+        // Assign magic artifacts first
+        switch (i)
         {
-            NewArtifact->ArtifactType = EArtifactType::Beam;
+        case 0: NewArtifact->ArtifactType = EArtifactType::Beam; break;
+        case 1: NewArtifact->ArtifactType = EArtifactType::PhaseWalk; break;
+        case 2: NewArtifact->ArtifactType = EArtifactType::PathFinder; break;
+        case 3: NewArtifact->ArtifactType = EArtifactType::Barrier; break;
+        default: NewArtifact->ArtifactType = EArtifactType::Beam; break;
         }
     }
 }

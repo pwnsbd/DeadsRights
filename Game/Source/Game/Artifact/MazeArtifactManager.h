@@ -24,7 +24,7 @@ public:
 
     // Number of artifacts to spawn in the maze
     UPROPERTY(EditAnywhere, Category="Artifacts")
-    int32 NumArtifacts = 3;
+    int32 NumArtifacts = 7;
 
     UPROPERTY(EditAnywhere, Category="Artifacts")
     UMaze* Maze;
@@ -34,6 +34,16 @@ public:
 
     UPROPERTY(EditAnywhere, Category="Artifacts")
     FMazeNode PlayerStartCell;
+
+    UPROPERTY(EditAnywhere, Category="Artifacts")
+    AActor* PlayerPawn;
+
+    UPROPERTY(EditAnywhere, Category="Artifacts")
+    AActor* AIPawn;
+
+    // Minimum distance (in cells) from the player or AI starting position to any spawned artifact
+    UPROPERTY(EditAnywhere, Category="Artifacts")
+    int32 SpawnSafetyRadius = 4;
 
 private:
   TArray<FMazeNode> UsedCells; // To track which cells have already been used for artifact spawning

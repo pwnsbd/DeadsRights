@@ -9,13 +9,19 @@ class UMaze;
 class ACubeToSphere;
 class UStaticMeshComponent;
 class USphereComponent;
+class UMazeNavigator;
+class UCapsuleComponent;
+class AEnemyPawn;
 
 // Initalized artifact types
 UENUM(BlueprintType)
 enum class EArtifactType : uint8
 {
-    None     UMETA(DisplayName = "None"), // Basic artifact
-    Beam     UMETA(DisplayName = "Beam Projector"),
+    None          UMETA(DisplayName = "None"), // Basic artifact
+    Beam          UMETA(DisplayName = "Beam"), //Fires beam to destroy AI
+    PhaseWalk     UMETA(DisplayName = "Phase Walk"),       // walk through walls
+    PathFinder    UMETA(DisplayName = "Path Finder"),      // shortest path to nearest artifact
+    Barrier       UMETA(DisplayName = "Barrier")          // trap area
 };
 
 UCLASS()
@@ -96,8 +102,47 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Artifact|Ability|Beam")
     FLinearColor BeamColor = FLinearColor::Blue;
 
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Artifact|Ability|Barrier")
+    TSubclassOf<AActor> BarrierWallClass;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Artifact|Ability|PhaseWalk")
+    float PhaseDuration = 6.f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Artifact|Ability|PathFinder")
+    float PathDuration = 10.f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Artifact|Ability|Barrier")
+    float BarrierDuration = 8.f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Artifact|Ability|Barrier")
+    int32 BarrierRadius = 7;
+
 protected:
     void FireBeam(const FMazeNode& StartNode, EMazeDir Direction); // Core logic for firing the beam, called by ActivateAbilityFromNode
+
+    // Phase Walk parameters
+    void ActivatePhaseWalk();
+    void EndPhaseWalk();
+    FTimerHandle PhaseTimer;
+ 
+
+    //Path Finder parameters
+    void ActivatePathFinder();
+    
+
+    UPROPERTY()
+    UMazeNavigator* Navigator;
+
+    //Barrier Spell
+    void ActivateBarrier();
+    void DestroyBarrier();
+
+    UPROPERTY()
+    TArray<AActor*> BarrierWalls;
+
+    FTimerHandle BarrierTimer;
+
+
 
     FVector GetWorldPositionFromNode(const FMazeNode& Node) const; // Helper to convert maze cell to world position for visual effects
     void DrawBeamVisual(const TArray<FVector>& BeamPoints); // Drawing actual beam effect (using debug lines for simplicity)

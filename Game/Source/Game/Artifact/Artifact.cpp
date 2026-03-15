@@ -2,6 +2,13 @@
 #include "../Maze/Maze.h"
 #include "../Conversion/CubeToSphere.h"
 
+#include "Kismet/GameplayStatics.h"
+#include "EngineUtils.h"
+#include "GameFramework/Character.h"
+#include "Components/CapsuleComponent.h"
+#include "MazeNavigator.h"
+#include "EnemyPawn.h"
+
 #include "Components/StaticMeshComponent.h"
 #include "Components/SphereComponent.h"
 #include "UObject/ConstructorHelpers.h"
@@ -135,7 +142,11 @@ void AArtifact::ActivateAbility()
     ActivateAbilityFromNode(PlayerCell, Dir);
 
     // Decrement AFTER successful use
-    CurrentCharges--;
+    bool bSuccess = ActivateAbilityFromNode(PlayerCell, Dir);
+    if (bSuccess)
+    {
+        CurrentCharges--;
+    }
 
     UE_LOG(LogTemp, Log, TEXT("Charges remaining: %d"), CurrentCharges);
 
@@ -157,12 +168,21 @@ void AArtifact::ActivateAbilityFromNode(const FMazeNode& StartNode, EMazeDir Dir
 
     switch (ArtifactType)
     {
-        case EArtifactType::Beam:
-            FireBeam(StartNode, Direction);
-            break;
+    case EArtifactType::Beam:
+        FireBeam(StartNode, Direction);
+        break;
 
-        default:
-            break;
+    case EArtifactType::PhaseWalk:
+        ActivatePhaseWalk();
+        break;
+
+    case EArtifactType::PathFinder:
+        ActivatePathFinder();
+        break;
+
+    case EArtifactType::Barrier:
+        ActivateBarrier();
+        break;
     }
 }
 
@@ -179,6 +199,20 @@ void AArtifact::FireBeam(const FMazeNode& StartNode, EMazeDir Direction)
     }
 
     DrawBeamVisual(BeamPoints);
+
+    AActor* AI =
+    UGameplayStatics::GetActorOfClass(GetWorld(), AEnemyPawn::StaticClass());
+
+    if (AI)
+    {
+        FMazeNode AINode =
+            SphereActor->WorldToMazeCell(AI->GetActorLocation());
+
+        if (BeamCells.Contains(AINode))
+        {
+            UE_LOG(LogTemp, Warning, TEXT("AI HIT BY BEAM"));
+        }
+    }
 }
 
 // Helper to convert world position to maze cell for visual effects
@@ -225,4 +259,183 @@ void AArtifact::OnOverlapBegin(
         return;
 
     PickUp(OtherActor);
+}
+
+// Phase Walk logic
+void AArtifact::ActivatePhaseWalk()
+{
+    if (!Carrier) return;
+
+    UCapsuleComponent* Capsule =
+        Carrier->FindComponentByClass<UCapsuleComponent>();
+
+    if (!Capsule) return;
+
+    Capsule->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+
+    DrawDebugSphere(
+        GetWorld(),
+        Carrier->GetActorLocation(),
+        120,
+        16,
+        FColor::Purple,
+        false,
+        PhaseDuration,
+        0,
+        5
+    );
+
+    GetWorldTimerManager().SetTimer(
+        PhaseTimer,
+        this,
+        &AArtifact::EndPhaseWalk,
+        PhaseDuration,
+        false
+    );
+}
+
+// Ends the phase walk effect, re-enabling collision and ensuring the player is in a valid cell
+void AArtifact::EndPhaseWalk()
+{
+    if (!Carrier || !SphereActor) return;
+
+    UCapsuleComponent* Capsule =
+        Carrier->FindComponentByClass<UCapsuleComponent>();
+
+    if (!Capsule) return;
+
+    Capsule->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+
+    FMazeNode Node = SphereActor->WorldToMazeCell(Carrier->GetActorLocation());
+
+    FVector SafePos = SphereActor->GetCellCenterWorld(
+        Node.Face,
+        Node.X,
+        Node.Y
+    );
+
+    Carrier->SetActorLocation(SafePos);
+}
+
+// Path Finder logic, finds the nearest artifact and draws a path to it
+void AArtifact::ActivatePathFinder()
+{
+    if (!Carrier || !Navigator) return;
+
+    FVector PlayerPos = Carrier->GetActorLocation();
+
+    AArtifact* Closest = nullptr;
+    float BestDist = FLT_MAX;
+
+    for (TActorIterator<AArtifact> It(GetWorld()); It; ++It)
+    {
+        if (*It == this) continue;
+
+        float Dist = FVector::Dist(PlayerPos, It->GetActorLocation());
+
+        if (Dist < BestDist)
+        {
+            BestDist = Dist;
+            Closest = *It;
+        }
+    }
+
+    if (!Closest) return;
+
+    TArray<FVector> Path;
+
+    if (Navigator->FindPath(PlayerPos, Closest->GetActorLocation(), Path))
+    {
+        for (int32 i = 0; i < Path.Num() - 1; i++)
+        {
+            DrawDebugLine(
+                GetWorld(),
+                Path[i],
+                Path[i+1],
+                FColor::Green,
+                false,
+                PathDuration,
+                0,
+                12.f
+            );
+
+            DrawDebugSphere(
+                GetWorld(),
+                Path[i],
+                25,
+                12,
+                FColor::Green,
+                false,
+                PathDuration
+            );
+        }
+    }
+}
+
+// Activates a barrier around the player, creating temporary walls in adjacent cells
+void AArtifact::ActivateBarrier()
+{
+    FMazeNode PlayerNode =
+        SphereActor->WorldToMazeCell(Carrier->GetActorLocation());
+
+    for (int32 x = -BarrierRadius; x <= BarrierRadius; x++)
+    {
+        for (int32 y = -BarrierRadius; y <= BarrierRadius; y++)
+        {
+            if (FMath::Abs(x) != BarrierRadius &&
+                FMath::Abs(y) != BarrierRadius)
+                continue;
+
+            int32 Face = PlayerNode.Face;
+            int32 NX = PlayerNode.X + x;
+            int32 NY = PlayerNode.Y + y;
+
+            if (NX < 0 || NX >= Maze->CellsPerFace || NY < 0 || NY >= Maze->CellsPerFace)
+            {
+                continue;
+            }
+            
+            FVector Pos =
+                SphereActor->GetCellCenterWorld(Face, NX, NY);
+
+            AActor* Wall = GetWorld()->SpawnActor<AActor>(
+                BarrierWallClass,
+                Pos,
+                FRotator::ZeroRotator
+            );
+
+            Wall->SetActorLocation(Pos);
+            BarrierWalls.Add(Wall);
+        }
+    }
+
+    DrawDebugBox(
+        GetWorld(),
+        Pos,
+        FVector(40),
+        FColor::Red,
+        false,
+        BarrierDuration,
+        0,
+        5
+    );
+
+    GetWorldTimerManager().SetTimer(
+        BarrierTimer,
+        this,
+        &AArtifact::DestroyBarrier,
+        BarrierDuration,
+        false
+    );
+}
+
+// Destroys all barrier walls when the effect ends
+void AArtifact::DestroyBarrier()
+{
+    for (AActor* Wall : BarrierWalls)
+    {
+        if (Wall) Wall->Destroy();
+    }
+
+    BarrierWalls.Empty();
 }
