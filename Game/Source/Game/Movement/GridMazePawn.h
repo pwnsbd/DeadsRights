@@ -11,7 +11,6 @@
 
 #include "GridMazePawn.generated.h"
 
-
 class ACubeToSphere;
 class UMaze;
 class UCapsuleComponent;
@@ -51,23 +50,30 @@ private:
 		int32& OutY
 	) const;
 
-	// Pure 2D movement rule
-	// If the step goes out of bounds, this maps the coordinate across cube face seams
-	/*bool MapAcrossEdge(
-		int32 InFace,
-		int32 InX,
-		int32 InY,
-		EMazeDir Dir,
-		int32 N,
-		int32& OutFace,
-		int32& OutX,
-		int32& OutY
-	) const;*/
-
 	void DumpFaceAscii(int32 FaceToDump) const;
 	void DumpCurrentFaceAscii() const;
 
 	void UpdateCameraToSphereCenter();
+
+	// new center-to-center movement
+	bool bStepTweenActive = false;
+	float StepTweenElapsed = 0.f;
+
+	UPROPERTY(EditAnywhere, Category="Grid|Movement")
+	float StepTweenDuration = 0.12f;
+
+	FVector StepTweenStartLocation = FVector::ZeroVector;
+	FVector StepTweenTargetLocation = FVector::ZeroVector;
+	FVector StepTweenSphereCenter = FVector::ZeroVector;
+
+	FRotator StepTweenStartRotation = FRotator::ZeroRotator;
+	FRotator StepTweenTargetRotation = FRotator::ZeroRotator;
+
+	void BeginStepTween(int32 OldFace, int32 OldX, int32 OldY, int32 NewFace, int32 NewX, int32 NewY);
+	void UpdateStepTween(float DeltaSeconds);
+	FVector BuildPlacedWorldLocationForCell(int32 InFace, int32 InX, int32 InY) const;
+	FRotator BuildPlacedWorldRotationForCell(int32 InFace, int32 InX, int32 InY) const;
+	FVector GetBasisSphereCenterWorld() const;
 
 private:
 	UPROPERTY(VisibleAnywhere)

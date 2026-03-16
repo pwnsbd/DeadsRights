@@ -295,9 +295,109 @@ bool AGridMazePawn::IsOpen(const FMazeCell& Cell, EMazeDir Dir) const
 	return false;
 }*/
 
+FVector AGridMazePawn::GetBasisSphereCenterWorld() const
+{
+	const FTransform BasisXform = Orchestrator
+		? Orchestrator->GetActorTransform()
+		: Sphere->GetActorTransform();
+
+	return BasisXform.TransformPosition(FVector::ZeroVector);
+}
+
+FVector AGridMazePawn::BuildPlacedWorldLocationForCell(int32 InFace, int32 InX, int32 InY) const
+{
+	if (!Sphere)
+	{
+		return GetActorLocation();
+	}
+
+	const FVector CellCenterWorld = Sphere->GetCellCenterWorld(InFace, InX, InY);
+	const FVector SphereCenterWorld = GetBasisSphereCenterWorld();
+	const FVector UpDir = (CellCenterWorld - SphereCenterWorld).GetSafeNormal();
+
+	const float HalfHeight = Capsule ? Capsule->GetScaledCapsuleHalfHeight() : 0.f;
+	return CellCenterWorld + UpDir * (HalfHeight + 2.f + StepHeightOffset);
+}
+
+FRotator AGridMazePawn::BuildPlacedWorldRotationForCell(int32 InFace, int32 InX, int32 InY) const
+{
+	if (!Sphere)
+	{
+		return GetActorRotation();
+	}
+
+	const FVector CellCenterWorld = Sphere->GetCellCenterWorld(InFace, InX, InY);
+	const FVector SphereCenterWorld = GetBasisSphereCenterWorld();
+	const FVector UpDir = (CellCenterWorld - SphereCenterWorld).GetSafeNormal();
+
+	return FRotationMatrix::MakeFromZ(UpDir).Rotator();
+}
+
+void AGridMazePawn::BeginStepTween(int32 OldFace, int32 OldX, int32 OldY, int32 NewFace, int32 NewX, int32 NewY)
+{
+	bStepTweenActive = true;
+	StepTweenElapsed = 0.f;
+
+	StepTweenSphereCenter = GetBasisSphereCenterWorld();
+
+	StepTweenStartLocation = BuildPlacedWorldLocationForCell(OldFace, OldX, OldY);
+	StepTweenTargetLocation = BuildPlacedWorldLocationForCell(NewFace, NewX, NewY);
+
+	StepTweenStartRotation = BuildPlacedWorldRotationForCell(OldFace, OldX, OldY);
+	StepTweenTargetRotation = BuildPlacedWorldRotationForCell(NewFace, NewX, NewY);
+}
+
+void AGridMazePawn::UpdateStepTween(float DeltaSeconds)
+{
+	if (!bStepTweenActive)
+	{
+		return;
+	}
+
+	StepTweenElapsed += DeltaSeconds;
+
+	const float Alpha = FMath::Clamp(StepTweenElapsed / FMath::Max(0.001f, StepTweenDuration), 0.f, 1.f);
+	const float SmoothAlpha = FMath::InterpEaseInOut(0.f, 1.f, Alpha, 2.0f);
+
+	// Move along the sphere shell instead of straight-line drifting through space
+	const FVector StartFromCenter = StepTweenStartLocation - StepTweenSphereCenter;
+	const FVector TargetFromCenter = StepTweenTargetLocation - StepTweenSphereCenter;
+
+	const FVector StartDir = StartFromCenter.GetSafeNormal();
+	const FVector TargetDir = TargetFromCenter.GetSafeNormal();
+
+	const float StartRadius = StartFromCenter.Size();
+	const float TargetRadius = TargetFromCenter.Size();
+	const float Radius = FMath::Lerp(StartRadius, TargetRadius, SmoothAlpha);
+
+	const FVector Dir = FQuat::Slerp(
+		FQuat::FindBetweenNormals(FVector::ForwardVector, StartDir),
+		FQuat::FindBetweenNormals(FVector::ForwardVector, TargetDir),
+		SmoothAlpha
+	).RotateVector(FVector::ForwardVector).GetSafeNormal();
+
+	const FVector NewLocation = StepTweenSphereCenter + Dir * Radius;
+	const FRotator NewRotation = FMath::Lerp(StepTweenStartRotation, StepTweenTargetRotation, SmoothAlpha);
+
+	SetActorLocationAndRotation(
+		NewLocation,
+		NewRotation,
+		false,
+		nullptr,
+		ETeleportType::TeleportPhysics
+	);
+
+	if (Alpha >= 1.f)
+	{
+		bStepTweenActive = false;
+		SnapToCell();
+	}
+}
+
 bool AGridMazePawn::TryStep(EMazeDir Dir)
 {
 	if (!Sphere || !Maze) return false;
+	if (bStepTweenActive) return false;
 
 	const int32 N = FMath::Max(1, Maze->CellsPerFace);
 
@@ -310,7 +410,6 @@ bool AGridMazePawn::TryStep(EMazeDir Dir)
 		Cell.OpenS ? 1 : 0,
 		Cell.OpenW ? 1 : 0);
 
-	// Always print the face after input, even if movement is blocked
 	auto PrintFaceNow = [&]()
 	{
 		DumpCurrentFaceAscii();
@@ -327,37 +426,26 @@ bool AGridMazePawn::TryStep(EMazeDir Dir)
 	int32 NewX = X;
 	int32 NewY = Y;
 
-	// In face movement
 	if (Dir == EMazeDir::N) NewY--;
 	if (Dir == EMazeDir::S) NewY++;
 	if (Dir == EMazeDir::W) NewX--;
 	if (Dir == EMazeDir::E) NewX++;
 
-	// Cross face seam if needed
-	/*if (NewX < 0 || NewX >= N || NewY < 0 || NewY >= N)
+	if (NewX < 0 || NewX >= N || NewY < 0 || NewY >= N)
 	{
-		if (!MapAcrossEdge(Face, X, Y, Dir, N, NewFace, NewX, NewY))
+		const FMazeNode CurrentNode(Face, X, Y);
+		FMazeNode OutNode;
+
+		if (!Maze->TryFaceTransition(CurrentNode, Dir, OutNode))
 		{
 			UE_LOG(LogTemp, Warning, TEXT("Out of bounds but no seam mapping found"));
-			PrintFaceNow();
 			return false;
 		}
-	}*/
-  if (NewX < 0 || NewX >= N || NewY < 0 || NewY >= N)
-  {
-      FMazeNode CurrentNode(Face, X, Y);
-      FMazeNode OutNode;
 
-      if (!Maze->TryFaceTransition(CurrentNode, Dir, OutNode))
-      {
-          UE_LOG(LogTemp, Warning, TEXT("Out of bounds but no seam mapping found"));
-          return false;
-      }
-
-      NewFace = OutNode.Face;
-      NewX = OutNode.X;
-      NewY = OutNode.Y;
-  }
+		NewFace = OutNode.Face;
+		NewX = OutNode.X;
+		NewY = OutNode.Y;
+	}
 
 	const int32 OldFace = Face;
 	const int32 OldX = X;
@@ -366,14 +454,9 @@ bool AGridMazePawn::TryStep(EMazeDir Dir)
 	Face = NewFace;
 	X = NewX;
 	Y = NewY;
-	if (Orchestrator)
-	{
-		Orchestrator->RotateMazeToCell(OldFace, OldX, OldY, Face, X, Y, 0.12f);
-	}
-	else
-	{
-		SnapToCell();
-	}
+
+	BeginStepTween(OldFace, OldX, OldY, Face, X, Y);
+
 	PrintFaceNow();
 	return true;
 }
@@ -382,21 +465,8 @@ void AGridMazePawn::SnapToCell()
 {
 	if (!Sphere) return;
 
-	const FTransform BasisXform = Orchestrator
-		? Orchestrator->GetActorTransform()
-		: Sphere->GetActorTransform();
-
-	const FVector CellCenterWorld = Sphere->GetCellCenterWorld(Face, X, Y);
-
-	const FVector SphereCenterWorld = BasisXform.TransformPosition(FVector::ZeroVector);
-	const FVector UpDir = (CellCenterWorld - SphereCenterWorld).GetSafeNormal();
-
-	
-
-	const float HalfHeight = Capsule ? Capsule->GetScaledCapsuleHalfHeight() : 0.f;
-	const FVector NewLocation = CellCenterWorld + UpDir * (HalfHeight + 2.f + StepHeightOffset);
-
-	const FRotator NewRotation = FRotationMatrix::MakeFromZ(UpDir).Rotator();
+	const FVector NewLocation = BuildPlacedWorldLocationForCell(Face, X, Y);
+	const FRotator NewRotation = BuildPlacedWorldRotationForCell(Face, X, Y);
 
 	SetActorLocationAndRotation(
 		NewLocation,
@@ -405,7 +475,9 @@ void AGridMazePawn::SnapToCell()
 		nullptr,
 		ETeleportType::TeleportPhysics
 	);
+
 	const FVector PawnLoc = GetActorLocation();
+	const FVector SphereCenterWorld = GetBasisSphereCenterWorld();
 
 	UE_LOG(LogTemp, Warning,
 		TEXT("Pawn World Pos: X=%.2f Y=%.2f Z=%.2f"),
@@ -545,6 +617,8 @@ void AGridMazePawn::DumpFaceAscii(int32 FaceToDump) const
 void AGridMazePawn::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
+
+	UpdateStepTween(DeltaSeconds);
 	UpdateCameraToSphereCenter();
 }
 
