@@ -15,7 +15,7 @@ AOrchestrator::AOrchestrator()
 {
 	PrimaryActorTick.bCanEverTick = false;
 
-	USceneComponent* Root = CreateDefaultSubobject<USceneComponent>(TEXT("Root"));
+	USceneComponent *Root = CreateDefaultSubobject<USceneComponent>(TEXT("Root"));
 	SetRootComponent(Root);
 
 	WallHISM = CreateDefaultSubobject<UInstancedStaticMeshComponent>(TEXT("WallHISM"));
@@ -34,7 +34,7 @@ AOrchestrator::AOrchestrator()
  * args : Transform - current actor transform during construction.
  * result: None
  */
-void AOrchestrator::OnConstruction(const FTransform& Transform)
+void AOrchestrator::OnConstruction(const FTransform &Transform)
 {
 	Super::OnConstruction(Transform);
 	Rebuild();
@@ -49,10 +49,10 @@ void AOrchestrator::ResolveSphereFromChild()
 {
 	SphereActor = nullptr;
 
-	TArray<UChildActorComponent*> ChildComps;
+	TArray<UChildActorComponent *> ChildComps;
 	GetComponents<UChildActorComponent>(ChildComps);
 
-	for (UChildActorComponent* CAC : ChildComps)
+	for (UChildActorComponent *CAC : ChildComps)
 	{
 		if (CAC && CAC->GetChildActor() == nullptr)
 		{
@@ -124,7 +124,7 @@ void AOrchestrator::EnsureMazeGenerated()
 	Maze->Generate();
 }
 
-static FORCEINLINE int32 CountOpenSides(const FMazeCell& C)
+static FORCEINLINE int32 CountOpenSides(const FMazeCell &C)
 {
 	return (C.OpenN ? 1 : 0) + (C.OpenE ? 1 : 0) + (C.OpenS ? 1 : 0) + (C.OpenW ? 1 : 0);
 }
@@ -141,7 +141,7 @@ bool AOrchestrator::IsCellSpawnable(int32 Face, int32 X, int32 Y, int32 MinOpenS
 	if (!Maze)
 		return false;
 
-	const FMazeCell& C = Maze->GetCell(Face, X, Y);
+	const FMazeCell &C = Maze->GetCell(Face, X, Y);
 	return CountOpenSides(C) >= MinOpenSides;
 }
 
@@ -153,8 +153,8 @@ bool AOrchestrator::IsCellSpawnable(int32 Face, int32 X, int32 Y, int32 MinOpenS
  *   - MaxTries: maximum random attempts
  * result: True if a cell was found; otherwise False.
  */
-bool AOrchestrator::FindRandomSpawnCell(int32& OutFace, int32& OutX, int32& OutY,
-	int32 MinOpenSides, int32 MaxTries) const
+bool AOrchestrator::FindRandomSpawnCell(int32 &OutFace, int32 &OutX, int32 &OutY,
+										int32 MinOpenSides, int32 MaxTries) const
 {
 	if (!Maze)
 		return false;
@@ -191,8 +191,8 @@ bool AOrchestrator::FindRandomSpawnCell(int32& OutFace, int32& OutX, int32& OutY
  *   - MaxTries: maximum random attempts before failing.
  * result: True if a valid spawn cell was found; otherwise False (OutTransform becomes Identity).
  */
-bool AOrchestrator::GetRandomSpawnTransform(FTransform& OutTransform,
-	float CapsuleHalfHeight, int32 MinOpenSides, int32 MaxTries) const
+bool AOrchestrator::GetRandomSpawnTransform(FTransform &OutTransform,
+											float CapsuleHalfHeight, int32 MinOpenSides, int32 MaxTries) const
 {
 	if (!SphereActor || !Maze)
 		return false;
@@ -243,7 +243,7 @@ void AOrchestrator::BuildWallsFromMaze()
 	if (N <= 0)
 		return;
 
-	auto AddWallFromEdgeLocal = [&](const FVector& A, const FVector& B)
+	auto AddWallFromEdgeLocal = [&](const FVector &A, const FVector &B)
 	{
 		const FVector Edge = (B - A);
 		const float EdgeLen = Edge.Size();
@@ -265,14 +265,18 @@ void AOrchestrator::BuildWallsFromMaze()
 		WallHISM->AddInstance(FTransform(Rot, Loc, Scale));
 	};
 
-	auto IsOpen = [&](const FMazeCell& C, EMazeDir Dir) -> bool
+	auto IsOpen = [&](const FMazeCell &C, EMazeDir Dir) -> bool
 	{
 		switch (Dir)
 		{
-		case EMazeDir::N: return C.OpenN;
-		case EMazeDir::E: return C.OpenE;
-		case EMazeDir::S: return C.OpenS;
-		case EMazeDir::W: return C.OpenW;
+		case EMazeDir::N:
+			return C.OpenN;
+		case EMazeDir::E:
+			return C.OpenE;
+		case EMazeDir::S:
+			return C.OpenS;
+		case EMazeDir::W:
+			return C.OpenW;
 		}
 		return false;
 	};
@@ -283,7 +287,7 @@ void AOrchestrator::BuildWallsFromMaze()
 		{
 			for (int32 X = 0; X < N; ++X)
 			{
-				const FMazeCell& Cell = Maze->GetCell(Face, X, Y);
+				const FMazeCell &Cell = Maze->GetCell(Face, X, Y);
 				FVector A, B;
 
 				if (!IsOpen(Cell, EMazeDir::E) && SphereActor->GetCellWallEdgeLocal(Face, X, Y, EMazeDir::E, A, B))
@@ -310,21 +314,27 @@ void AOrchestrator::BuildWallsFromMaze()
  */
 void AOrchestrator::Astar()
 {
-	if (!SphereActor)
-	{
-		UE_LOG(LogTemp, Error, TEXT("A* TEST FAILED: SphereActor is null!"));
+	if (!SphereActor || !MazeRunnerClass || !Navigator)
 		return;
-	}
 
+	// Clear old debug lines
 	FlushPersistentDebugLines(GetWorld());
 
-	int32 MaxCell = SphereActor->GetCellsPerFace() - 1;
+	// Get a random START point
+	FTransform StartTransform;
+	if (!GetRandomSpawnTransform(StartTransform, 20.0f, 1))
+		return;
 
-	FVector StartPos = SphereActor->GetCellCenterWorld(1, MaxCell / 2, MaxCell / 2);
-	FVector EndPos   = SphereActor->GetCellCenterWorld(0, MaxCell / 2, MaxCell / 2);
+	// Get a random END point
+	FTransform EndTransform;
+	if (!GetRandomSpawnTransform(EndTransform, 20.0f, 1))
+		return;
+
+	FVector StartPos = StartTransform.GetLocation();
+	FVector EndPos = EndTransform.GetLocation();
 
 	DrawDebugSphere(GetWorld(), StartPos, 30.0f, 12, FColor::Blue, true, 20.0f);
-	DrawDebugSphere(GetWorld(), EndPos,   30.0f, 12, FColor::Red,  true, 20.0f);
+	DrawDebugSphere(GetWorld(), EndPos, 30.0f, 12, FColor::Red, true, 20.0f);
 
 	TArray<FVector> PathResult;
 
@@ -348,7 +358,7 @@ void AOrchestrator::Astar()
 			{
 				PathHISM->ClearInstances();
 
-				for (const FVector& Point : PathResult)
+				for (const FVector &Point : PathResult)
 				{
 					FVector LocalPos = GetActorTransform().InverseTransformPosition(Point);
 					FVector UpDir = LocalPos.GetSafeNormal();
@@ -361,7 +371,7 @@ void AOrchestrator::Astar()
 			}
 			else
 			{
-				for (const FVector& Point : PathResult)
+				for (const FVector &Point : PathResult)
 				{
 					DrawDebugSphere(GetWorld(), Point, 15.0f, 12, FColor::Green, true, 20.0f);
 				}

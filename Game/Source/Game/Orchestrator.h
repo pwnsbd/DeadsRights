@@ -43,7 +43,7 @@ public:
 	 * args : Transform - current actor transform during construction.
 	 * result: None
 	 */
-	virtual void OnConstruction(const FTransform& Transform) override;
+	virtual void OnConstruction(const FTransform &Transform) override;
 
 	/**
 	 * desc : Full pipeline rebuild:
@@ -72,11 +72,10 @@ public:
 	 */
 	UFUNCTION(BlueprintCallable, Category = "Orchestrator|Spawn")
 	bool GetRandomSpawnTransform(
-		FTransform& OutTransform,
+		FTransform &OutTransform,
 		float CapsuleHalfHeight = 88.f,
 		int32 MinOpenSides = 2,
-		int32 MaxTries = 5000
-	) const;
+		int32 MaxTries = 5000) const;
 
 	// =========================================================
 	// Parameters / References (Public)
@@ -90,7 +89,15 @@ public:
 	 * result: None
 	 */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Orchestrator | AI")
-	UMazeNavigator* Navigator = nullptr;
+	UMazeNavigator *Navigator = nullptr;
+
+	// The Blueprint class of your AI Character
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AI")
+	TSubclassOf<class AMazeRunner> MazeRunnerClass;
+
+	// Pointer to ensure we only ever spawn ONE character
+	UPROPERTY()
+	AMazeRunner *ActiveRunner = nullptr;
 
 	// ---------- Sphere / Refs ----------
 
@@ -100,7 +107,7 @@ public:
 	 * result: None
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Orchestrator | Refs")
-	ACubeToSphere* SphereActor = nullptr;
+	ACubeToSphere *SphereActor = nullptr;
 
 	/** Sphere radius used when building surface. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Orchestrator | Sphere", meta = (ClampMin = "1.0", UIMin = "1.0"))
@@ -123,7 +130,7 @@ public:
 	// ---------- Walls ----------
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Orchestrator | Walls")
-	UStaticMesh* WallMesh = nullptr;
+	UStaticMesh *WallMesh = nullptr;
 
 	/** Reference mesh edge length (Engine cube default ~100 units). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Orchestrator | Walls")
@@ -144,10 +151,10 @@ public:
 	// ---------- Path Debug / Visualization ----------
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Orchestrator | Path")
-	UStaticMesh* PathMesh = nullptr;
+	UStaticMesh *PathMesh = nullptr;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Orchestrator | Path")
-	UMaterialInterface* PathMaterial = nullptr;
+	UMaterialInterface *PathMaterial = nullptr;
 
 protected:
 	// =========================================================
@@ -156,15 +163,15 @@ protected:
 
 	/** Owned maze data object (logical maze). */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Orchestrator | Refs")
-	UMaze* Maze = nullptr;
+	UMaze *Maze = nullptr;
 
 	/** Instanced mesh component holding all wall segments. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Orchestrator | Walls")
-	UInstancedStaticMeshComponent* WallHISM = nullptr;
+	UInstancedStaticMeshComponent *WallHISM = nullptr;
 
 	/** Instanced mesh component holding path markers (debug). */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Orchestrator | Path")
-	UInstancedStaticMeshComponent* PathHISM = nullptr;
+	UInstancedStaticMeshComponent *PathHISM = nullptr;
 
 private:
 	// =========================================================
@@ -218,10 +225,9 @@ private:
 	 * result: True if a cell was found; otherwise False.
 	 */
 	bool FindRandomSpawnCell(
-		int32& OutFace,
-		int32& OutX,
-		int32& OutY,
+		int32 &OutFace,
+		int32 &OutX,
+		int32 &OutY,
 		int32 MinOpenSides,
-		int32 MaxTries
-	) const;
+		int32 MaxTries) const;
 };
