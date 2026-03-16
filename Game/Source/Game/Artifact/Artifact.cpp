@@ -6,8 +6,8 @@
 #include "EngineUtils.h"
 #include "GameFramework/Character.h"
 #include "Components/CapsuleComponent.h"
-#include "MazeNavigator.h"
-#include "EnemyPawn.h"
+#include "AI/MazeNavigator.h"
+//#include "EnemyPawn.h"
 
 #include "Components/StaticMeshComponent.h"
 #include "Components/SphereComponent.h"
@@ -138,6 +138,9 @@ void AArtifact::ActivateAbility()
     FVector Forward = Carrier->GetActorForwardVector();
     EMazeDir Dir = SphereActor->GetDirectionFromVector(Forward, PlayerCell);
 
+
+
+    /* turned off temp for compiling
     // Activate the ability from the player's current cell and direction
     ActivateAbilityFromNode(PlayerCell, Dir);
 
@@ -146,7 +149,11 @@ void AArtifact::ActivateAbility()
     if (bSuccess)
     {
         CurrentCharges--;
-    }
+    }*/
+   
+    ActivateAbilityFromNode(PlayerCell, Dir);
+    CurrentCharges--;
+
 
     UE_LOG(LogTemp, Log, TEXT("Charges remaining: %d"), CurrentCharges);
 
@@ -200,6 +207,7 @@ void AArtifact::FireBeam(const FMazeNode& StartNode, EMazeDir Direction)
 
     DrawBeamVisual(BeamPoints);
 
+    /*
     AActor* AI =
     UGameplayStatics::GetActorOfClass(GetWorld(), AEnemyPawn::StaticClass());
 
@@ -207,6 +215,18 @@ void AArtifact::FireBeam(const FMazeNode& StartNode, EMazeDir Direction)
     {
         FMazeNode AINode =
             SphereActor->WorldToMazeCell(AI->GetActorLocation());
+
+        if (BeamCells.Contains(AINode))
+        {
+            UE_LOG(LogTemp, Warning, TEXT("AI HIT BY BEAM"));
+        }
+    }*/
+
+    AActor* AI = AIPawn;
+
+    if (AI)
+    {
+        FMazeNode AINode = SphereActor->WorldToMazeCell(AI->GetActorLocation());
 
         if (BeamCells.Contains(AINode))
         {
@@ -409,9 +429,15 @@ void AArtifact::ActivateBarrier()
         }
     }
 
+    FVector DebugCenter = SphereActor->GetCellCenterWorld(
+        PlayerNode.Face,
+        PlayerNode.X,
+        PlayerNode.Y
+    );
+
     DrawDebugBox(
         GetWorld(),
-        Pos,
+        DebugCenter,
         FVector(40),
         FColor::Red,
         false,
@@ -420,6 +446,7 @@ void AArtifact::ActivateBarrier()
         5
     );
 
+    
     GetWorldTimerManager().SetTimer(
         BarrierTimer,
         this,

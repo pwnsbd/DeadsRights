@@ -1,8 +1,8 @@
+#include "GridMazePawn.h"
+
 #include "Components/StaticMeshComponent.h"
 #include "GameFramework/SpringArmComponent.h"
 #include "Camera/CameraComponent.h"
-
-#include "GridMazePawn.h"
 
 #include "Kismet/GameplayStatics.h"
 #include "Orchestrator.h"
