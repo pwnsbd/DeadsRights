@@ -106,27 +106,14 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Orchestrator | Sphere", meta = (ClampMin = "1.0", UIMin = "1.0"))
 	float SphereRadius = 600.f;
 
-	// ---- Maze params ----
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Maze", meta=(ClampMin="2"))
-	int32 CellsPerFace = 31;
-
 	// If true, every editor rebuild picks a new random seed automatically
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Maze")
 	bool bRandomizeSeed = true;
 
-	// Used when bRandomizeSeed is false
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Maze", meta=(EditCondition="!bRandomizeSeed"))
-	int32 Seed = 122;
-
-	// Derived from CellsPerFace, do not edit directly
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Sphere")
-	int32 Resolution = 0;
-
 	// Button in Details panel
 	UFUNCTION(CallInEditor, Category="Maze")
 	void RandomizeSeedNow();
-
-
+	
 	
 	// Optional: set maze size here; Sphere Resolution should be CellsPerFace+1
 	/** Sphere mesh resolution (kept locked to CellsPerFace + 1 inside Rebuild()). */
@@ -164,8 +151,6 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Orchestrator | Walls")
 	float WallSurfaceOffset = 1.f;
 
-<<<<<<< HEAD
-
 	UFUNCTION(BlueprintCallable, Category="Orchestrator|Refs")
 	UMaze* GetMaze() const { return Maze; }
 
@@ -192,14 +177,8 @@ protected:
 
 	FQuat RotateStart;
 	FQuat RotateTarget;
-
-
-	// ---- Owned data/components ----
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Refs")
-	UMaze *Maze = nullptr;
-=======
+	
 	// ---------- Path Debug / Visualization ----------
->>>>>>> main
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Orchestrator | Path")
 	UStaticMesh* PathMesh = nullptr;
