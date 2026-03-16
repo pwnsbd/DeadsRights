@@ -2,24 +2,33 @@
 #include "../Maze/Maze.h"
 #include "../Conversion/CubeToSphere.h"
 #include "Kismet/KismetMathLibrary.h"
+#include "Algo/Reverse.h"
 
-// initializes the data and visuals
+// =========================================================================
+// Initialization
+// =========================================================================
+
 void UMazeNavigator::Init(UMaze *InMaze, ACubeToSphere *InSphere)
 {
     Maze = InMaze;
     Sphere = InSphere;
 }
 
-// brute forces to find the closest cell (optimize later using math instead of loops)
+// =========================================================================
+// Coordinate Translation
+// =========================================================================
+
 FMazeNode UMazeNavigator::WorldToNode(FVector WorldPos) const
 {
     if (!Sphere || !Maze)
+    {
         return FMazeNode(0, 0, 0);
+    }
 
     float BestDistSq = FLT_MAX;
     FMazeNode BestNode(0, 0, 0);
 
-    // finds distance of every cell
+    // TODO: Optimize mathematically later. For now, brute force distance check.
     for (int32 Face = 0; Face < 6; Face++)
     {
         for (int32 X = 0; X < Maze->CellsPerFace; X++)
@@ -28,6 +37,7 @@ FMazeNode UMazeNavigator::WorldToNode(FVector WorldPos) const
             {
                 FVector Center = Sphere->GetCellCenterWorld(Face, X, Y);
                 float DistSq = FVector::DistSquared(Center, WorldPos);
+
                 if (DistSq < BestDistSq)
                 {
                     BestDistSq = DistSq;
@@ -39,110 +49,112 @@ FMazeNode UMazeNavigator::WorldToNode(FVector WorldPos) const
     return BestNode;
 }
 
-// uses the helper function from maze to get the neighbors of the node that are open and traversable (not walls)
 TArray<FMazeNode> UMazeNavigator::GetNeighbors(const FMazeNode &Node) const
 {
-    // get neighbors of current node
     return Maze->GetTraversableNeighbors(Node);
 }
+
+// =========================================================================
+// A* Pathfinding Algorithm
+// =========================================================================
 
 bool UMazeNavigator::FindPath(FVector StartPos, FVector EndPos, TArray<FVector> &OutPath)
 {
     if (!Maze || !Sphere)
+    {
         return false;
+    }
 
-    // convert world positions to grid nodes
+    // 1. Convert world positions to logical grid nodes
     FMazeNode StartNode = WorldToNode(StartPos);
     FMazeNode EndNode = WorldToNode(EndPos);
 
-    // --- ADD THESE LOGS HERE ---
-    UE_LOG(LogTemp, Warning, TEXT("Inside FindPath - StartNode -> Face: %d | X: %d | Y: %d"), StartNode.Face, StartNode.X, StartNode.Y);
-    UE_LOG(LogTemp, Warning, TEXT("Inside FindPath - EndNode   -> Face: %d | X: %d | Y: %d"), EndNode.Face, EndNode.X, EndNode.Y);
-    // ---------------------------
-
     if (StartNode == EndNode)
+    {
         return false; // already at destination
+    }
 
-    // initialize A* data structures
+    // 2. Initialize A* Data Structures
     TArray<FMazeNode> OpenSet;
-
-    // initialize A* data structures: estimated cost
     TMap<FMazeNode, float> CostSoFar;
-    CostSoFar.Add(StartNode, 0.0f);
-
-    // initialize A* data structures: parent map
     TMap<FMazeNode, FMazeNode> CameFrom;
 
-    // initialize starting node
-    OpenSet.HeapPush(StartNode, [&](const FMazeNode &A, const FMazeNode &B)
-                     { 
-        float CostA = CostSoFar.Contains(A) ? CostSoFar[A] + FVector::Dist(Sphere->GetCellCenterWorld(A.Face, A.X, A.Y), EndPos) : FLT_MAX;
-        float CostB = CostSoFar.Contains(B) ? CostSoFar[B] + FVector::Dist(Sphere->GetCellCenterWorld(B.Face, B.X, B.Y), EndPos) : FLT_MAX;
-        return CostA < CostB; });
+    CostSoFar.Add(StartNode, 0.0f);
+
+    // ---------------------------------------------------------------------
+    // REFACTOR: Extract Method (Lambda)
+    // We define the Priority checking logic ONCE here, and reuse it everywhere.
+    // Priority = (Cost from Start) + (Distance to End)
+    // ---------------------------------------------------------------------
+    auto CalculatePriority = [&](const FMazeNode &Node) -> float
+    {
+        float Cost = CostSoFar.Contains(Node) ? CostSoFar[Node] : FLT_MAX;
+        float Heuristic = FVector::Dist(Sphere->GetCellCenterWorld(Node.Face, Node.X, Node.Y), EndPos);
+        return Cost + Heuristic;
+    };
+
+    auto CompareNodes = [&](const FMazeNode &A, const FMazeNode &B)
+    {
+        return CalculatePriority(A) < CalculatePriority(B);
+    };
+    // ---------------------------------------------------------------------
+
+    // 3. Begin A* Loop
+    OpenSet.HeapPush(StartNode, CompareNodes);
 
     // A* main loop
     while (OpenSet.Num() > 0)
     {
-        // get node with lowest estimated total cost
+        // Pop the node with the lowest estimated total cost
         FMazeNode CurrentNode;
-        OpenSet.HeapPop(CurrentNode, [&](const FMazeNode &A, const FMazeNode &B)
-                        {
-            float CostA = CostSoFar.Contains(A) ? CostSoFar[A] + FVector::Dist(Sphere->GetCellCenterWorld(A.Face, A.X, A.Y), EndPos) : FLT_MAX;
-            float CostB = CostSoFar.Contains(B) ? CostSoFar[B] + FVector::Dist(Sphere->GetCellCenterWorld(B.Face, B.X, B.Y), EndPos) : FLT_MAX;
-            return CostA < CostB; });
+        OpenSet.HeapPop(CurrentNode, CompareNodes);
 
-        // base case: destination reached
+        // 4. Base Case: Destination Reached! Reconstruct the path.
         if (CurrentNode == EndNode)
         {
-            // build path by backtracking through CameFrom
             FMazeNode step = EndNode;
+
             while (!(step == StartNode))
             {
                 OutPath.Add(Sphere->GetCellCenterWorld(step.Face, step.X, step.Y));
+
                 if (CameFrom.Contains(step))
                 {
                     step = CameFrom[step];
                 }
                 else
-                    break; // prevent infinite loop
+                {
+                    break; // Failsafe to prevent infinite loops
+                }
             }
 
-            // add start and reverse path
+            // Add the starting position and flip the array so it goes Start -> End
             OutPath.Add(Sphere->GetCellCenterWorld(StartNode.Face, StartNode.X, StartNode.Y));
             Algo::Reverse(OutPath);
             return true;
         }
 
-        // get neighbors of current node
+        // 5. Explore valid neighbors
         TArray<FMazeNode> Neighbors = GetNeighbors(CurrentNode);
 
-        if (CurrentNode == StartNode)
-        {
-            UE_LOG(LogTemp, Warning, TEXT("Start Node has %d traversable neighbors."), Neighbors.Num());
-        }
-
-        // explore neighbors
         for (const FMazeNode &Next : Neighbors)
         {
-            float newCost = CostSoFar[CurrentNode] + 1.0f; // assuming uniform cost for moving to a neighbor
+            float newCost = CostSoFar[CurrentNode] + 1.0f; // Uniform cost for grid movement
 
+            // If we haven't visited this neighbor, or we found a shorter path to it
             if (!CostSoFar.Contains(Next) || newCost < CostSoFar[Next])
             {
                 CostSoFar.Add(Next, newCost);
                 CameFrom.Add(Next, CurrentNode);
 
-                // add to the open set if not already there
+                // Add to the open set if not already there
                 if (!OpenSet.Contains(Next))
                 {
-                    OpenSet.HeapPush(Next, [&](const FMazeNode &A, const FMazeNode &B)
-                                     {
-                        float CostA = CostSoFar[A] + FVector::Dist(Sphere->GetCellCenterWorld(A.Face, A.X, A.Y), EndPos);
-                        float CostB = CostSoFar[B] + FVector::Dist(Sphere->GetCellCenterWorld(B.Face, B.X, B.Y), EndPos);
-                        return CostA < CostB; });
+                    OpenSet.HeapPush(Next, CompareNodes);
                 }
             }
         }
     }
 
-    return false; // no path found
+    return false; // OpenSet is empty, destination is unreachable
 }
