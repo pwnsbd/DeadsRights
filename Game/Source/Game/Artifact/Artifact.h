@@ -11,7 +11,7 @@ class UStaticMeshComponent;
 class USphereComponent;
 class UMazeNavigator;
 class UCapsuleComponent;
-class AEnemyPawn;
+//class AEnemyPawn;
 
 // Initalized artifact types
 UENUM(BlueprintType)
@@ -64,6 +64,9 @@ public:
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Artifact|Maze")
     FMazeNode CurrentCell; // The maze cell where the artifact is currently located (updated on spawn and pickup)
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Artifact|Maze")
+    AActor* AIPawn = nullptr;
 
     // ---------- Spawning ----------
     UFUNCTION(BlueprintCallable, Category="Artifact|Spawn")

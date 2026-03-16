@@ -23,7 +23,6 @@ void AMazeArtifactManager::BeginPlay()
         return;
 
     UsedCells.Empty();
-    Navigator = NewObject<UMazeNavigator>(this);
 
     // Spawn artifacts at random valid cells
     for (int32 i = 0; i < NumArtifacts; i++)
@@ -71,6 +70,9 @@ void AMazeArtifactManager::BeginPlay()
 
         NewArtifact->Maze = Maze;
         NewArtifact->SphereActor = SphereActor;
+
+        NewArtifact->AIPawn = AIPawn;
+
         NewArtifact->CurrentCell = SpawnCell;
 
         FVector SpawnLocation = SphereActor->GetCellCenterWorld(
