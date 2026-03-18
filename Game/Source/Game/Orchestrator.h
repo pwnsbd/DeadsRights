@@ -57,9 +57,8 @@ public:
 	 * args : None
 	 * result: None
 	 */
-	UFUNCTION(BlueprintCallable, Category = "Orchestrator")
+	UFUNCTION(BlueprintCallable, CallInEditor, Category = "Orchestrator")
 	void Rebuild();
-
 	/**
 	 * desc : Finds a random maze cell that is "open enough" and returns a spawn transform
 	 *        aligned to the sphere surface + corridor direction.
@@ -118,7 +117,7 @@ public:
 	// Optional: set maze size here; Sphere Resolution should be CellsPerFace+1
 	/** Sphere mesh resolution (kept locked to CellsPerFace + 1 inside Rebuild()). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Orchestrator | Sphere")
-	int32 Resolution = 32;
+	int32 Resolution = 7;
 
 	// ---------- Maze ----------
 
@@ -128,7 +127,7 @@ public:
 
 	/** Maze grid size per cube face. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Orchestrator | Maze")
-	int32 CellsPerFace = 31;
+	int32 CellsPerFace = 6;
 
 	// ---------- Walls ----------
 

@@ -51,9 +51,10 @@ AGridMazePawn::AGridMazePawn()
 	AutoPossessPlayer = EAutoReceiveInput::Player0;
 }
 
-void AGridMazePawn::BeginPlay()
+void AGridMazePawn::RefreshAfterMazeRebuild()
 {
-	Super::BeginPlay();
+	bStepTweenActive = false;
+	StepTweenElapsed = 0.f;
 
 	AOrchestrator* Orch = nullptr;
 	if (GetWorld())
@@ -64,40 +65,68 @@ void AGridMazePawn::BeginPlay()
 	if (Orch)
 	{
 		Orchestrator = Orch;
-		if (!Sphere) Sphere = Orch->SphereActor;
-		if (!Maze)   Maze = Orch->GetMaze();
+		Sphere = Orch->GetSphereActor();
+		Maze   = Orch->GetMaze();
 	}
 
-	if (Sphere && Maze)
-	{
-		FTransform SpawnT;
-		const float HalfHeight = Capsule ? Capsule->GetUnscaledCapsuleHalfHeight() : 88.f;
+	UE_LOG(LogTemp, Warning,
+		TEXT("RefreshAfterMazeRebuild START Orch=%s Sphere=%s Maze=%s"),
+		*GetNameSafe(Orchestrator),
+		*GetNameSafe(Sphere),
+		*GetNameSafe(Maze));
 
-		if (Orch && Orch->GetRandomSpawnTransform(SpawnT, HalfHeight))
+	if (!Sphere || !Maze)
+	{
+		UE_LOG(LogTemp, Error, TEXT("RefreshAfterMazeRebuild FAIL missing Sphere or Maze"));
+		return;
+	}
+
+	FTransform SpawnT;
+	const float HalfHeight = Capsule ? Capsule->GetUnscaledCapsuleHalfHeight() : 88.f;
+
+	if (Orchestrator && Orchestrator->GetRandomSpawnTransform(SpawnT, HalfHeight))
+	{
+		int32 NewFace = 0;
+		int32 NewX = 0;
+		int32 NewY = 0;
+
+		if (FindNearestCellToWorld(SpawnT.GetLocation(), NewFace, NewX, NewY))
 		{
-			int32 NewFace = 0, NewX = 0, NewY = 0;
-			FindNearestCellToWorld(SpawnT.GetLocation(), NewFace, NewX, NewY);
 			Face = NewFace;
 			X = NewX;
 			Y = NewY;
+
+			UE_LOG(LogTemp, Warning,
+				TEXT("RefreshAfterMazeRebuild picked random valid cell Face=%d X=%d Y=%d"),
+				Face, X, Y);
 		}
 		else
 		{
 			Face = StartFace;
 			X = StartX;
 			Y = StartY;
-		}
 
-		SnapToCell();
-		DumpCurrentFaceAscii();
+			UE_LOG(LogTemp, Warning,
+				TEXT("RefreshAfterMazeRebuild fallback FindNearest failed StartFace=%d StartX=%d StartY=%d"),
+				Face, X, Y);
+		}
+	}
+	else
+	{
+		Face = StartFace;
+		X = StartX;
+		Y = StartY;
+
+		UE_LOG(LogTemp, Warning,
+			TEXT("RefreshAfterMazeRebuild fallback no spawn transform StartFace=%d StartX=%d StartY=%d"),
+			Face, X, Y);
 	}
 
-	UE_LOG(LogTemp, Warning, TEXT("Pawn BeginPlay Sphere=%s Maze=%s Face=%d X=%d Y=%d"),
-		*GetNameSafe(Sphere), *GetNameSafe(Maze), Face, X, Y);
-
+	SnapToCell();
 	UpdateCameraToSphereCenter();
+	DumpCurrentFaceAscii();
 
-	if (APlayerController* PC = GetWorld()->GetFirstPlayerController())
+	if (APlayerController* PC = GetWorld() ? GetWorld()->GetFirstPlayerController() : nullptr)
 	{
 		if (PC->GetPawn() != this)
 		{
@@ -106,8 +135,22 @@ void AGridMazePawn::BeginPlay()
 
 		PC->SetViewTargetWithBlend(this, 0.0f);
 	}
+
+	UE_LOG(LogTemp, Warning,
+		TEXT("RefreshAfterMazeRebuild END Face=%d X=%d Y=%d"),
+		Face, X, Y);
 }
 
+void AGridMazePawn::BeginPlay()
+{
+	Super::BeginPlay();
+
+	RefreshAfterMazeRebuild();
+
+	UE_LOG(LogTemp, Warning, TEXT("Pawn BeginPlay complete"));
+}
+
+/*
 void AGridMazePawn::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
 {
 	Super::SetupPlayerInputComponent(PlayerInputComponent);
@@ -141,11 +184,152 @@ void AGridMazePawn::SetupPlayerInputComponent(UInputComponent* PlayerInputCompon
 	UE_LOG(LogTemp, Warning, TEXT("SetupInput called. Context=%s North=%s"),
 		*GetNameSafe(GridInputContext), *GetNameSafe(IA_North));
 }
+*/
+void AGridMazePawn::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
+{
+	Super::SetupPlayerInputComponent(PlayerInputComponent);
 
-void AGridMazePawn::StepNorth() { TryStep(EMazeDir::N); }
-void AGridMazePawn::StepSouth() { TryStep(EMazeDir::S); }
-void AGridMazePawn::StepWest()  { TryStep(EMazeDir::W); }
-void AGridMazePawn::StepEast()  { TryStep(EMazeDir::E); }
+	UE_LOG(LogTemp, Warning,
+		TEXT("SetupInput START Pawn=%s Controller=%s InputComp=%s"),
+		*GetNameSafe(this),
+		*GetNameSafe(GetController()),
+		*GetNameSafe(PlayerInputComponent));
+
+	if (APlayerController* PC = Cast<APlayerController>(GetController()))
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("SetupInput PlayerController=%s LocalPlayer=%s"),
+			*GetNameSafe(PC),
+			PC->GetLocalPlayer() ? TEXT("VALID") : TEXT("NULL"));
+
+		if (ULocalPlayer* LP = PC->GetLocalPlayer())
+		{
+			if (UEnhancedInputLocalPlayerSubsystem* Subsys = LP->GetSubsystem<UEnhancedInputLocalPlayerSubsystem>())
+			{
+				UE_LOG(LogTemp, Warning,
+					TEXT("SetupInput EnhancedInput subsystem VALID. Context=%s"),
+					*GetNameSafe(GridInputContext));
+
+				if (GridInputContext)
+				{
+					Subsys->ClearAllMappings();
+					Subsys->AddMappingContext(GridInputContext, 0);
+
+					UE_LOG(LogTemp, Warning,
+						TEXT("SetupInput Added mapping context %s"),
+						*GetNameSafe(GridInputContext));
+				}
+				else
+				{
+					UE_LOG(LogTemp, Error, TEXT("SetupInput GridInputContext is NULL"));
+				}
+			}
+			else
+			{
+				UE_LOG(LogTemp, Error, TEXT("SetupInput EnhancedInput subsystem is NULL"));
+			}
+		}
+	}
+	else
+	{
+		UE_LOG(LogTemp, Error, TEXT("SetupInput Controller is not an APlayerController"));
+	}
+
+	if (UEnhancedInputComponent* EIC = Cast<UEnhancedInputComponent>(PlayerInputComponent))
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("SetupInput EnhancedInputComponent VALID. North=%s South=%s West=%s East=%s"),
+			*GetNameSafe(IA_North),
+			*GetNameSafe(IA_South),
+			*GetNameSafe(IA_West),
+			*GetNameSafe(IA_East));
+
+		if (IA_North && IA_South && IA_West && IA_East)
+		{
+			EIC->BindAction(IA_North, ETriggerEvent::Started, this, &AGridMazePawn::StepNorth);
+			EIC->BindAction(IA_South, ETriggerEvent::Started, this, &AGridMazePawn::StepSouth);
+			EIC->BindAction(IA_West,  ETriggerEvent::Started, this, &AGridMazePawn::StepWest);
+			EIC->BindAction(IA_East,  ETriggerEvent::Started, this, &AGridMazePawn::StepEast);
+
+			UE_LOG(LogTemp, Warning, TEXT("SetupInput Actions bound successfully"));
+		}
+		else
+		{
+			UE_LOG(LogTemp, Error, TEXT("SetupInput one or more InputActions are NULL"));
+		}
+	}
+	else
+	{
+		UE_LOG(LogTemp, Error, TEXT("SetupInput PlayerInputComponent is not UEnhancedInputComponent"));
+	}
+
+	UE_LOG(LogTemp, Warning, TEXT("SetupInput END"));
+}
+
+
+// relative inputs
+EMazeDir AGridMazePawn::GetScreenRelativeDir(const FVector& ScreenVectorWorld) const
+{
+	if (!Sphere)
+	{
+		return EMazeDir::N;
+	}
+
+	const FVector SphereCenterWorld = GetBasisSphereCenterWorld();
+	const FVector PawnWorld = GetActorLocation();
+
+	const FVector SurfaceNormal = (PawnWorld - SphereCenterWorld).GetSafeNormal();
+	if (SurfaceNormal.IsNearlyZero())
+	{
+		return EMazeDir::N;
+	}
+
+	FVector TangentVector = FVector::VectorPlaneProject(ScreenVectorWorld, SurfaceNormal).GetSafeNormal();
+	if (TangentVector.IsNearlyZero())
+	{
+		return EMazeDir::N;
+	}
+
+	const FMazeNode CurrentNode(Face, X, Y);
+	return Sphere->GetDirectionFromVector(TangentVector, CurrentNode);
+}
+
+void AGridMazePawn::StepNorth()
+{
+	if (!Camera) return;
+
+	const EMazeDir Dir = GetScreenRelativeDir(Camera->GetUpVector());
+	UE_LOG(LogTemp, Warning, TEXT("INPUT StepNorth -> ScreenUp -> Dir=%d"), (int32)Dir);
+	TryStep(Dir);
+}
+
+void AGridMazePawn::StepSouth()
+{
+	if (!Camera) return;
+
+	const EMazeDir Dir = GetScreenRelativeDir(-Camera->GetUpVector());
+	UE_LOG(LogTemp, Warning, TEXT("INPUT StepSouth -> ScreenDown -> Dir=%d"), (int32)Dir);
+	TryStep(Dir);
+}
+
+void AGridMazePawn::StepWest()
+{
+	if (!Camera) return;
+
+	const EMazeDir Dir = GetScreenRelativeDir(-Camera->GetRightVector());
+	UE_LOG(LogTemp, Warning, TEXT("INPUT StepWest -> ScreenLeft -> Dir=%d"), (int32)Dir);
+	TryStep(Dir);
+}
+
+void AGridMazePawn::StepEast()
+{
+	if (!Camera) return;
+
+	const EMazeDir Dir = GetScreenRelativeDir(Camera->GetRightVector());
+	UE_LOG(LogTemp, Warning, TEXT("INPUT StepEast -> ScreenRight -> Dir=%d"), (int32)Dir);
+	TryStep(Dir);
+}
+//
 
 bool AGridMazePawn::IsOpen(const FMazeCell& Cell, EMazeDir Dir) const
 {
@@ -396,6 +580,34 @@ void AGridMazePawn::UpdateStepTween(float DeltaSeconds)
 
 bool AGridMazePawn::TryStep(EMazeDir Dir)
 {
+	UE_LOG(LogTemp, Warning,
+		TEXT("TryStep START Dir=%d Face=%d X=%d Y=%d Sphere=%s Maze=%s StepTweenActive=%s"),
+		(int32)Dir,
+		Face,
+		X,
+		Y,
+		*GetNameSafe(Sphere),
+		*GetNameSafe(Maze),
+		bStepTweenActive ? TEXT("true") : TEXT("false"));
+	
+	if (!Sphere)
+	{
+		UE_LOG(LogTemp, Error, TEXT("TryStep FAIL Sphere is NULL"));
+		return false;
+	}
+
+	if (!Maze)
+	{
+		UE_LOG(LogTemp, Error, TEXT("TryStep FAIL Maze is NULL"));
+		return false;
+	}
+
+	if (bStepTweenActive)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("TryStep BLOCKED step tween still active"));
+		return false;
+	}
+
 	if (!Sphere || !Maze) return false;
 	if (bStepTweenActive) return false;
 

@@ -7,7 +7,7 @@
 #include "Components/InstancedStaticMeshComponent.h"
 #include "Kismet/GameplayStatics.h"
 #include "Components/CapsuleComponent.h"
-
+#include "Movement/GridMazePawn.h"
 /**
  * desc : Default constructor. Creates root + wall/path instanced mesh components and sets basic collision rules.
  * args : None
@@ -125,6 +125,18 @@ void AOrchestrator::Rebuild()
 	Navigator->Init(Maze, SphereActor);
 
 	Astar();
+
+	if (UWorld* World = GetWorld())
+	{
+		AGridMazePawn* Pawn = Cast<AGridMazePawn>(
+			UGameplayStatics::GetActorOfClass(World, AGridMazePawn::StaticClass())
+		);
+
+		if (Pawn)
+		{
+			Pawn->RefreshAfterMazeRebuild();
+		}
+	}
 }
 
 /**

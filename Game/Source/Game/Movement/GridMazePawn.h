@@ -37,6 +37,7 @@ private:
 	void StepWest();
 	void StepEast();
 
+	EMazeDir GetScreenRelativeDir(const FVector& ScreenVectorWorld) const;
 	bool TryStep(EMazeDir Dir);
 
 	void SnapToCell();
@@ -86,6 +87,9 @@ private:
 	AOrchestrator* Orchestrator = nullptr;
 
 public:
+	UFUNCTION(BlueprintCallable, Category="Grid")
+	void RefreshAfterMazeRebuild();
+	
 	UPROPERTY(EditAnywhere, Category="Grid")
 	ACubeToSphere* Sphere = nullptr;
 
