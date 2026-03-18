@@ -89,7 +89,7 @@ private:
 public:
 	UFUNCTION(BlueprintCallable, Category="Grid")
 	void RefreshAfterMazeRebuild();
-	
+
 	UPROPERTY(EditAnywhere, Category="Grid")
 	ACubeToSphere* Sphere = nullptr;
 
@@ -141,4 +141,7 @@ private:
 
 	UPROPERTY(VisibleAnywhere, Category="Grid")
 	int32 Y = 0;
+
+	int32 GetPoleWedge(int32 InX, int32 InY) const;
+	EMazeDir RemapPoleInput(EMazeDir BaseDir) const;
 };

@@ -294,39 +294,150 @@ EMazeDir AGridMazePawn::GetScreenRelativeDir(const FVector& ScreenVectorWorld) c
 	return Sphere->GetDirectionFromVector(TangentVector, CurrentNode);
 }
 
+
+
+//god save me
+
+int32 AGridMazePawn::GetPoleWedge(int32 InX, int32 InY) const
+{
+	if (!Maze)
+	{
+		return 0;
+	}
+
+	const int32 N = FMath::Max(1, Maze->CellsPerFace);
+	const int32 Max = N - 1;
+
+	const bool bUnderYX = (InY > InX);
+	const bool bUnderYMaxMinusX = (InY > (Max - InX));
+
+	if (!bUnderYX && !bUnderYMaxMinusX) return 0;
+	if (!bUnderYX &&  bUnderYMaxMinusX) return 1;
+	if ( bUnderYX &&  bUnderYMaxMinusX) return 2;
+	return 3;
+}
+
+EMazeDir AGridMazePawn::RemapPoleInput(EMazeDir BaseDir) const
+{
+	if ((Face != 4 && Face != 5) || !Maze)
+	{
+		return BaseDir;
+	}
+
+	const int32 Wedge = GetPoleWedge(X, Y);
+
+	// Row = wedge 0..3
+	// Col = BaseDir (N=0, E=1, S=2, W=3)
+	//
+	// Face 4:
+	//   W0: N E S W
+	//   W1: E S W N
+	//   W2: S W N E
+	//   W3: W N E S
+	//
+	// Face 5:
+	//   W0: N E S W
+	//   W1: W N E S
+	//   W2: S W N E
+	//   W3: E S W N
+
+	static const EMazeDir Face4Map[4][4] =
+	{
+		{ EMazeDir::N, EMazeDir::E, EMazeDir::S, EMazeDir::W }, // wedge 0
+		{ EMazeDir::E, EMazeDir::S, EMazeDir::W, EMazeDir::N }, // wedge 1
+		{ EMazeDir::S, EMazeDir::W, EMazeDir::N, EMazeDir::E }, // wedge 2
+		{ EMazeDir::W, EMazeDir::N, EMazeDir::E, EMazeDir::S }  // wedge 3
+	};
+
+	static const EMazeDir Face5Map[4][4] =
+	{
+		{ EMazeDir::S, EMazeDir::W, EMazeDir::N, EMazeDir::E }, // wedge 0  keep
+		{ EMazeDir::W, EMazeDir::N, EMazeDir::E, EMazeDir::S }, // wedge 1  keep
+		{ EMazeDir::N, EMazeDir::E, EMazeDir::S, EMazeDir::W }, // wedge 2  FIXED
+		{ EMazeDir::W, EMazeDir::N, EMazeDir::E, EMazeDir::S }  // wedge 3  try flipped
+	};
+	const int32 DirIndex = (int32)BaseDir;
+	const EMazeDir OutDir = (Face == 4)
+		? Face4Map[Wedge][DirIndex]
+		: Face5Map[Wedge][DirIndex];
+
+	UE_LOG(LogTemp, Warning,
+		TEXT("PoleRemap Face=%d X=%d Y=%d Wedge=%d BaseDir=%d OutDir=%d"),
+		Face, X, Y, Wedge, DirIndex, (int32)OutDir);
+
+	return OutDir;
+}
+///-0--------------------------
+
 void AGridMazePawn::StepNorth()
 {
-	if (!Camera) return;
+	EMazeDir Dir = EMazeDir::N;
 
-	const EMazeDir Dir = GetScreenRelativeDir(Camera->GetUpVector());
-	UE_LOG(LogTemp, Warning, TEXT("INPUT StepNorth -> ScreenUp -> Dir=%d"), (int32)Dir);
+	if (Face == 4 || Face == 5)
+	{
+		Dir = RemapPoleInput(EMazeDir::N);
+		UE_LOG(LogTemp, Warning, TEXT("INPUT StepNorth pole remap -> Dir=%d"), (int32)Dir);
+	}
+	else
+	{
+		Dir = GetScreenRelativeDir(Camera ? Camera->GetUpVector() : FVector::ForwardVector);
+		UE_LOG(LogTemp, Warning, TEXT("INPUT StepNorth screen-up -> Dir=%d"), (int32)Dir);
+	}
+
 	TryStep(Dir);
 }
 
 void AGridMazePawn::StepSouth()
 {
-	if (!Camera) return;
+	EMazeDir Dir = EMazeDir::S;
 
-	const EMazeDir Dir = GetScreenRelativeDir(-Camera->GetUpVector());
-	UE_LOG(LogTemp, Warning, TEXT("INPUT StepSouth -> ScreenDown -> Dir=%d"), (int32)Dir);
+	if (Face == 4 || Face == 5)
+	{
+		Dir = RemapPoleInput(EMazeDir::S);
+		UE_LOG(LogTemp, Warning, TEXT("INPUT StepSouth pole remap -> Dir=%d"), (int32)Dir);
+	}
+	else
+	{
+		Dir = GetScreenRelativeDir(Camera ? -Camera->GetUpVector() : FVector::BackwardVector);
+		UE_LOG(LogTemp, Warning, TEXT("INPUT StepSouth screen-down -> Dir=%d"), (int32)Dir);
+	}
+
 	TryStep(Dir);
 }
 
 void AGridMazePawn::StepWest()
 {
-	if (!Camera) return;
+	EMazeDir Dir = EMazeDir::W;
 
-	const EMazeDir Dir = GetScreenRelativeDir(-Camera->GetRightVector());
-	UE_LOG(LogTemp, Warning, TEXT("INPUT StepWest -> ScreenLeft -> Dir=%d"), (int32)Dir);
+	if (Face == 4 || Face == 5)
+	{
+		Dir = RemapPoleInput(EMazeDir::W);
+		UE_LOG(LogTemp, Warning, TEXT("INPUT StepWest pole remap -> Dir=%d"), (int32)Dir);
+	}
+	else
+	{
+		Dir = GetScreenRelativeDir(Camera ? -Camera->GetRightVector() : -FVector::RightVector);
+		UE_LOG(LogTemp, Warning, TEXT("INPUT StepWest screen-left -> Dir=%d"), (int32)Dir);
+	}
+
 	TryStep(Dir);
 }
 
 void AGridMazePawn::StepEast()
 {
-	if (!Camera) return;
+	EMazeDir Dir = EMazeDir::E;
 
-	const EMazeDir Dir = GetScreenRelativeDir(Camera->GetRightVector());
-	UE_LOG(LogTemp, Warning, TEXT("INPUT StepEast -> ScreenRight -> Dir=%d"), (int32)Dir);
+	if (Face == 4 || Face == 5)
+	{
+		Dir = RemapPoleInput(EMazeDir::E);
+		UE_LOG(LogTemp, Warning, TEXT("INPUT StepEast pole remap -> Dir=%d"), (int32)Dir);
+	}
+	else
+	{
+		Dir = GetScreenRelativeDir(Camera ? Camera->GetRightVector() : FVector::RightVector);
+		UE_LOG(LogTemp, Warning, TEXT("INPUT StepEast screen-right -> Dir=%d"), (int32)Dir);
+	}
+
 	TryStep(Dir);
 }
 //
