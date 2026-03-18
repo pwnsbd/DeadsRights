@@ -947,38 +947,40 @@ void AGridMazePawn::Tick(float DeltaSeconds)
 
 void AGridMazePawn::UpdateCameraToSphereCenter()
 {
-	if (!SpringArm || !Sphere)
-	{
-		return;
-	}
+    if (!SpringArm || !Sphere)
+    {
+        return;
+    }
 
-	const FTransform BasisXform = Orchestrator
-		? Orchestrator->GetActorTransform()
-		: Sphere->GetActorTransform();
+    const FVector SphereCenterWorld = GetBasisSphereCenterWorld();
+    const FVector PawnWorld        = GetActorLocation();
 
-	const FVector SphereCenterWorld = BasisXform.TransformPosition(FVector::ZeroVector);
-	const FVector PawnWorld = GetActorLocation();
+    const FVector OutwardNormal = (PawnWorld - SphereCenterWorld).GetSafeNormal();
+    if (OutwardNormal.IsNearlyZero())
+    {
+        return;
+    }
 
-	const FVector ToCenter = (PawnWorld - SphereCenterWorld).GetSafeNormal();
-	if (ToCenter.IsNearlyZero())
-	{
-		return;
-	}
+    const FVector InwardNormal = -OutwardNormal;   // ← THIS IS THE KEY CHANGE
 
-	FVector StableUp = FVector::VectorPlaneProject(FVector::UpVector, ToCenter).GetSafeNormal();
+    // Keep your stable up vector (prevents camera roll flipping)
+    FVector StableUp = FVector::VectorPlaneProject(FVector::UpVector, OutwardNormal).GetSafeNormal();
+    if (StableUp.IsNearlyZero())
+    {
+        StableUp = FVector::VectorPlaneProject(GetActorForwardVector(), OutwardNormal).GetSafeNormal();
+    }
+    if (StableUp.IsNearlyZero())
+    {
+        StableUp = FVector::ForwardVector;
+    }
 
-	if (StableUp.IsNearlyZero())
-	{
-		StableUp = FVector::VectorPlaneProject(GetActorForwardVector(), ToCenter).GetSafeNormal();
-	}
+    // Now SpringArm Forward = inward → camera gets pushed OUTWARD along the radial line
+    const FRotator SpringArmRot = FRotationMatrix::MakeFromXZ(InwardNormal, StableUp).Rotator();
 
-	if (StableUp.IsNearlyZero())
-	{
-		StableUp = FVector::ForwardVector;
-	}
+    SpringArm->SetWorldRotation(SpringArmRot);
 
-	const FRotator LookAtCenter = FRotationMatrix::MakeFromXZ(ToCenter, StableUp).Rotator();
-	SpringArm->SetWorldRotation(LookAtCenter);
+    // Optional: make camera look slightly down at the pawn (classic 3rd-person feel)
+    // Camera->SetWorldRotation( FRotator(SpringArmRot.Pitch + 5.0f, SpringArmRot.Yaw, 0.0f) );
 }
 
 void AGridMazePawn::CalcCamera(float DeltaTime, FMinimalViewInfo& OutResult)
