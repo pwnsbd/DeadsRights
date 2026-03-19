@@ -1,10 +1,12 @@
 #include "Orchestrator.h"
 #include "Components/SceneComponent.h"
 #include "AI/MazeNavigator.h"
+#include "AI/MazeRunner.h"
 #include "Conversion/CubeToSphere.h"
 #include "Maze/Maze.h"
 #include "DrawDebugHelpers.h"
 #include "Components/InstancedStaticMeshComponent.h"
+#include "Engine/StaticMeshActor.h" // Add this include at the top
 
 /**
  * desc : Default constructor. Creates root + wall/path instanced mesh components and sets basic collision rules.
@@ -23,10 +25,14 @@ AOrchestrator::AOrchestrator()
 	WallHISM->SetCollisionProfileName(TEXT("BlockAll"));
 	WallHISM->SetMobility(EComponentMobility::Movable);
 
+	WallHISM->SetCanEverAffectNavigation(false);
+
 	PathHISM = CreateDefaultSubobject<UInstancedStaticMeshComponent>(TEXT("PathHISM"));
 	PathHISM->SetupAttachment(Root);
 	PathHISM->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	PathHISM->SetMobility(EComponentMobility::Movable);
+
+	PathHISM->SetCanEverAffectNavigation(false);
 }
 
 /**
@@ -147,27 +153,24 @@ bool AOrchestrator::IsCellSpawnable(int32 Face, int32 X, int32 Y, int32 MinOpenS
 
 /**
  * desc : Randomly searches for a spawnable cell within MaxTries attempts.
- * args :
- *   - OutFace, OutX, OutY: returned cell indices if found
- *   - MinOpenSides: minimum open sides required
- *   - MaxTries: maximum random attempts
- * result: True if a cell was found; otherwise False.
  */
-bool AOrchestrator::FindRandomSpawnCell(int32 &OutFace, int32 &OutX, int32 &OutY,
-										int32 MinOpenSides, int32 MaxTries) const
+bool AOrchestrator::FindRandomSpawnCell(int32 &OutFace, int32 &OutX, int32 &OutY, int32 MinOpenSides, int32 MaxTries, int32 PointSeed) const
 {
 	if (!Maze)
 		return false;
 
 	const int32 N = Maze->CellsPerFace;
 	if (N <= 0)
-		return false;
+		return false; // <-- The compiler was mad about a stray semicolon near here!
+
+	// LOCK THE RANDOMNESS TO YOUR MAZE SEED
+	FRandomStream Stream(Seed + PointSeed);
 
 	for (int32 Try = 0; Try < MaxTries; ++Try)
 	{
-		const int32 Face = FMath::RandRange(0, 5);
-		const int32 X = FMath::RandRange(0, N - 1);
-		const int32 Y = FMath::RandRange(0, N - 1);
+		const int32 Face = Stream.RandRange(0, 5);
+		const int32 X = Stream.RandRange(0, N - 1);
+		const int32 Y = Stream.RandRange(0, N - 1);
 
 		if (IsCellSpawnable(Face, X, Y, MinOpenSides))
 		{
@@ -181,24 +184,14 @@ bool AOrchestrator::FindRandomSpawnCell(int32 &OutFace, int32 &OutX, int32 &OutY
 	return false;
 }
 
-/**
- * desc : Finds a random maze cell that is "open enough" and returns a spawn transform
- *        aligned to the sphere surface + corridor direction.
- * args :
- *   - OutTransform: returned spawn transform (rotation aligns to surface + hallway).
- *   - CapsuleHalfHeight: character capsule half height used to offset spawn above surface.
- *   - MinOpenSides: minimum number of open sides required for a cell to be spawnable.
- *   - MaxTries: maximum random attempts before failing.
- * result: True if a valid spawn cell was found; otherwise False (OutTransform becomes Identity).
- */
-bool AOrchestrator::GetRandomSpawnTransform(FTransform &OutTransform,
-											float CapsuleHalfHeight, int32 MinOpenSides, int32 MaxTries) const
+bool AOrchestrator::GetRandomSpawnTransform(FTransform &OutTransform, float CapsuleHalfHeight, int32 MinOpenSides, int32 MaxTries, int32 PointSeed) const
 {
 	if (!SphereActor || !Maze)
 		return false;
 
 	int32 Face, X, Y;
-	if (!FindRandomSpawnCell(Face, X, Y, MinOpenSides, MaxTries))
+	// Pass the PointSeed down into the math
+	if (!FindRandomSpawnCell(Face, X, Y, MinOpenSides, MaxTries, PointSeed))
 	{
 		OutTransform = FTransform::Identity;
 		return false;
@@ -222,6 +215,82 @@ bool AOrchestrator::GetRandomSpawnTransform(FTransform &OutTransform,
 }
 
 /**
+ * desc : Randomly searches for a spawnable cell within MaxTries attempts.
+ * args :
+ *   - OutFace, OutX, OutY: returned cell indices if found
+ *   - MinOpenSides: minimum open sides required
+ *   - MaxTries: maximum random attempts
+ * result: True if a cell was found; otherwise False.
+ */
+// bool AOrchestrator::FindRandomSpawnCell(int32 &OutFace, int32 &OutX, int32 &OutY,
+// 										int32 MinOpenSides, int32 MaxTries) const
+// {
+// 	if (!Maze)
+// 		return false;
+
+// 	const int32 N = Maze->CellsPerFace;
+// 	if (N <= 0)
+// 		return false;
+
+// 	for (int32 Try = 0; Try < MaxTries; ++Try)
+// 	{
+// 		const int32 Face = FMath::RandRange(0, 5);
+// 		const int32 X = FMath::RandRange(0, N - 1);
+// 		const int32 Y = FMath::RandRange(0, N - 1);
+
+// 		if (IsCellSpawnable(Face, X, Y, MinOpenSides))
+// 		{
+// 			OutFace = Face;
+// 			OutX = X;
+// 			OutY = Y;
+// 			return true;
+// 		}
+// 	}
+
+// 	return false;
+// }
+
+/**
+ * desc : Finds a random maze cell that is "open enough" and returns a spawn transform
+ *        aligned to the sphere surface + corridor direction.
+ * args :
+ *   - OutTransform: returned spawn transform (rotation aligns to surface + hallway).
+ *   - CapsuleHalfHeight: character capsule half height used to offset spawn above surface.
+ *   - MinOpenSides: minimum number of open sides required for a cell to be spawnable.
+ *   - MaxTries: maximum random attempts before failing.
+ * result: True if a valid spawn cell was found; otherwise False (OutTransform becomes Identity).
+ */
+// bool AOrchestrator::GetRandomSpawnTransform(FTransform &OutTransform,
+// 											float CapsuleHalfHeight, int32 MinOpenSides, int32 MaxTries) const
+// {
+// 	if (!SphereActor || !Maze)
+// 		return false;
+
+// 	int32 Face, X, Y;
+// 	if (!FindRandomSpawnCell(Face, X, Y, MinOpenSides, MaxTries))
+// 	{
+// 		OutTransform = FTransform::Identity;
+// 		return false;
+// 	}
+
+// 	const FVector CenterWorld = SphereActor->GetCellCenterWorld(Face, X, Y);
+// 	const FVector SphereCenter = SphereActor->GetActorLocation();
+
+// 	const FVector UpDir = (CenterWorld - SphereCenter).GetSafeNormal();
+
+// 	FVector EdgeA, EdgeB;
+// 	SphereActor->GetCellWallEdgeWorld(Face, X, Y, EMazeDir::W, EdgeA, EdgeB);
+
+// 	const FVector ForwardDir = (EdgeA - EdgeB).GetSafeNormal();
+// 	const FRotator SpawnRot = FRotationMatrix::MakeFromXZ(ForwardDir, UpDir).Rotator();
+
+// 	const FVector SpawnLoc = CenterWorld + UpDir * (CapsuleHalfHeight + 2.f);
+
+// 	OutTransform = FTransform(SpawnRot, SpawnLoc, FVector::OneVector);
+// 	return true;
+// }
+
+/**
  * desc : Converts Maze walls into instanced mesh wall segments on the sphere surface.
  * args : None
  * result: None
@@ -243,26 +312,60 @@ void AOrchestrator::BuildWallsFromMaze()
 	if (N <= 0)
 		return;
 
+	// Helps with maze and sphere being on the same center when we move sphere in view
 	auto AddWallFromEdgeLocal = [&](const FVector &A, const FVector &B)
 	{
+		if (A.ContainsNaN() || B.ContainsNaN())
+			return;
+
 		const FVector Edge = (B - A);
 		const float EdgeLen = Edge.Size();
-		if (EdgeLen <= KINDA_SMALL_NUMBER)
+
+		if (EdgeLen <= 0.1f || !FMath::IsFinite(EdgeLen))
+			return;
+		if (WallMeshBaseLength <= 0.1f)
 			return;
 
 		const FVector Mid = (A + B) * 0.5f;
 		const FVector Up = Mid.GetSafeNormal();
-		const FVector Fwd = Edge / EdgeLen;
 
-		const FQuat Rot = FRotationMatrix::MakeFromXZ(Fwd, Up).ToQuat();
+		if (Up.IsNearlyZero() || Up.ContainsNaN())
+			return;
+
+		const FVector Fwd = Edge / EdgeLen;
+		if (Fwd.ContainsNaN())
+			return;
+
+		// THE MISSING LINK: Prevent collinear matrix collapse!
+		// If Forward and Up are parallel, the rotation matrix explodes.
+		if (FMath::Abs(FVector::DotProduct(Fwd, Up)) > 0.99f)
+			return;
+
+		FQuat Rot = FRotationMatrix::MakeFromXZ(Fwd, Up).ToQuat();
+
+		// Force check the quaternion
+		if (Rot.ContainsNaN() || !Rot.IsNormalized())
+			return;
+
 		const FVector Loc = Mid + Up * (WallHeight * 0.5f + WallSurfaceOffset);
 
+		// Hard-clamp scales so they can never reach Infinity or 0
 		const FVector Scale(
-			EdgeLen / WallMeshBaseLength,
-			WallThickness / WallMeshBaseLength,
-			WallHeight / WallMeshBaseLength);
+			FMath::Clamp(EdgeLen / WallMeshBaseLength, 0.01f, 1000.0f),
+			FMath::Clamp(WallThickness / WallMeshBaseLength, 0.01f, 1000.0f),
+			FMath::Clamp(WallHeight / WallMeshBaseLength, 0.01f, 1000.0f));
 
-		WallHISM->AddInstance(FTransform(Rot, Loc, Scale));
+		if (Loc.ContainsNaN() || Scale.ContainsNaN())
+			return;
+
+		// Explicitly build the transform
+		FTransform InstanceTransform;
+		InstanceTransform.SetComponents(Rot, Loc, Scale);
+
+		if (InstanceTransform.IsValid() && WallHISM)
+		{
+			WallHISM->AddInstance(InstanceTransform);
+		}
 	};
 
 	auto IsOpen = [&](const FMazeCell &C, EMazeDir Dir) -> bool
@@ -312,70 +415,93 @@ void AOrchestrator::BuildWallsFromMaze()
  * args : None
  * result: None
  */
+void AOrchestrator::TriggerNextRun()
+{
+	// Offset the seed by 10 every time we press the button so we get brand new points!
+	RuntimeSeedOffset += 10;
+
+	// Rerun the generation
+	Astar();
+}
+
 void AOrchestrator::Astar()
 {
-	if (!SphereActor || !MazeRunnerClass || !Navigator)
+	if (!SphereActor || !MazeRunnerClass || !Navigator || !MarkerMesh)
 		return;
 
-	// Clear old debug lines
+	// 1. Clean up old runner AND old markers so they don't pile up in the editor!
+	if (ActiveRunner)
+	{
+		for (AActor *Marker : ActiveRunner->LinkedMarkers)
+		{
+			if (Marker)
+				Marker->Destroy();
+		}
+		ActiveRunner->Destroy();
+		ActiveRunner = nullptr;
+	}
 	FlushPersistentDebugLines(GetWorld());
 
-	// Get a random START point
-	FTransform StartTransform;
-	if (!GetRandomSpawnTransform(StartTransform, 20.0f, 1))
+	// 2. Add the RuntimeSeedOffset
+	FTransform StartTransform, EndTransform;
+	if (!GetRandomSpawnTransform(StartTransform, 15.0f, 1, 5000, 1 + RuntimeSeedOffset) ||
+		!GetRandomSpawnTransform(EndTransform, 15.0f, 1, 5000, 2 + RuntimeSeedOffset))
 		return;
-
-	// Get a random END point
-	FTransform EndTransform;
-	if (!GetRandomSpawnTransform(EndTransform, 20.0f, 1))
-		return;
-
-	FVector StartPos = StartTransform.GetLocation();
-	FVector EndPos = EndTransform.GetLocation();
-
-	DrawDebugSphere(GetWorld(), StartPos, 30.0f, 12, FColor::Blue, true, 20.0f);
-	DrawDebugSphere(GetWorld(), EndPos, 30.0f, 12, FColor::Red, true, 20.0f);
 
 	TArray<FVector> PathResult;
-
-	if (Navigator != nullptr)
+	if (Navigator->FindPath(StartTransform.GetLocation(), EndTransform.GetLocation(), PathResult))
 	{
-		bool bFoundPath = Navigator->FindPath(StartPos, EndPos, PathResult);
+		FActorSpawnParameters SpawnParams;
+		SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
 
-		if (bFoundPath)
+		// 3. Spawn START Marker
+		AStaticMeshActor *StartMarker = GetWorld()->SpawnActor<AStaticMeshActor>(AStaticMeshActor::StaticClass(), StartTransform, SpawnParams);
+		if (StartMarker)
 		{
-			if (PathHISM && PathMesh)
-			{
-				PathHISM->SetStaticMesh(PathMesh);
+			// CRITICAL FIX: Set to Movable FIRST, then Attach!
+			StartMarker->GetStaticMeshComponent()->SetMobility(EComponentMobility::Movable);
+			StartMarker->AttachToActor(SphereActor, FAttachmentTransformRules::KeepWorldTransform);
 
-				if (PathMaterial)
-				{
-					PathHISM->SetMaterial(0, PathMaterial);
-				}
-			}
+			StartMarker->GetStaticMeshComponent()->SetStaticMesh(MarkerMesh);
+			if (StartMaterial)
+				StartMarker->GetStaticMeshComponent()->SetMaterial(0, StartMaterial);
+			StartMarker->SetActorScale3D(FVector(0.25f));
+		}
 
-			if (PathHISM && PathHISM->GetStaticMesh())
-			{
-				PathHISM->ClearInstances();
+		// 4. Spawn END Marker
+		AStaticMeshActor *EndMarker = GetWorld()->SpawnActor<AStaticMeshActor>(AStaticMeshActor::StaticClass(), EndTransform, SpawnParams);
+		if (EndMarker)
+		{
+			// CRITICAL FIX: Set to Movable FIRST, then Attach!
+			EndMarker->GetStaticMeshComponent()->SetMobility(EComponentMobility::Movable);
+			EndMarker->AttachToActor(SphereActor, FAttachmentTransformRules::KeepWorldTransform);
 
-				for (const FVector &Point : PathResult)
-				{
-					FVector LocalPos = GetActorTransform().InverseTransformPosition(Point);
-					FVector UpDir = LocalPos.GetSafeNormal();
+			EndMarker->GetStaticMeshComponent()->SetStaticMesh(MarkerMesh);
+			if (EndMaterial)
+				EndMarker->GetStaticMeshComponent()->SetMaterial(0, EndMaterial);
+			EndMarker->SetActorScale3D(FVector(0.25f));
+		}
 
-					LocalPos += UpDir * 10.0f;
+		TArray<FVector> LocalPath;
+		FTransform SphereTransform = SphereActor->GetTransform();
+		for (const FVector &WorldPoint : PathResult)
+		{
+			// InverseTransformPosition converts absolute GPS into "relative to the sphere"
+			LocalPath.Add(SphereTransform.InverseTransformPosition(WorldPoint));
+		}
 
-					FTransform InstanceTransform(FRotator::ZeroRotator, LocalPos, FVector(0.1f));
-					PathHISM->AddInstance(InstanceTransform);
-				}
-			}
-			else
-			{
-				for (const FVector &Point : PathResult)
-				{
-					DrawDebugSphere(GetWorld(), Point, 15.0f, 12, FColor::Green, true, 20.0f);
-				}
-			}
+		// 5. Spawn Runner
+		ActiveRunner = GetWorld()->SpawnActor<AMazeRunner>(MazeRunnerClass, StartTransform, SpawnParams);
+		if (ActiveRunner)
+		{
+			// ---> THIS IS THE MISSING SUPERGLUE! <---
+			ActiveRunner->AttachToActor(SphereActor, FAttachmentTransformRules::KeepWorldTransform);
+
+			ActiveRunner->LinkedMarkers.Add(StartMarker);
+			ActiveRunner->LinkedMarkers.Add(EndMarker);
+
+			// Pass the LocalPath and the Sphere pointer!
+			ActiveRunner->SetPath(LocalPath, SphereActor);
 		}
 	}
 }

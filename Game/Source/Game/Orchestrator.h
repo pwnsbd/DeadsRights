@@ -70,12 +70,20 @@ public:
 	 *   - MaxTries: maximum random attempts before failing.
 	 * result: True if a valid spawn cell was found; otherwise False (OutTransform becomes Identity).
 	 */
+	// UFUNCTION(BlueprintCallable, Category = "Orchestrator|Spawn")
+	// bool GetRandomSpawnTransform(
+	// 	FTransform &OutTransform,
+	// 	float CapsuleHalfHeight = 88.f,
+	// 	int32 MinOpenSides = 2,
+	// 	int32 MaxTries = 5000) const;
+
 	UFUNCTION(BlueprintCallable, Category = "Orchestrator|Spawn")
 	bool GetRandomSpawnTransform(
 		FTransform &OutTransform,
 		float CapsuleHalfHeight = 88.f,
 		int32 MinOpenSides = 2,
-		int32 MaxTries = 5000) const;
+		int32 MaxTries = 5000,
+		int32 PointSeed = 0) const; // <--- Added PointSeed here!
 
 	// =========================================================
 	// Parameters / References (Public)
@@ -91,13 +99,35 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Orchestrator | AI")
 	UMazeNavigator *Navigator = nullptr;
 
+	// ---------- AI ----------
+
 	// The Blueprint class of your AI Character
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AI")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Orchestrator | AI")
 	TSubclassOf<class AMazeRunner> MazeRunnerClass;
 
 	// Pointer to ensure we only ever spawn ONE character
 	UPROPERTY()
 	AMazeRunner *ActiveRunner = nullptr;
+
+	/** Mesh used to mark the Start and End points of the path. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Orchestrator | AI")
+	UStaticMesh *MarkerMesh = nullptr;
+
+	/** Material for the Start marker. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Orchestrator | AI")
+	UMaterialInterface *StartMaterial = nullptr;
+
+	/** Material to apply to the End marker. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Orchestrator | AI")
+	UMaterialInterface *EndMaterial = nullptr;
+
+	// Call this from your Blueprint when you press Shift + 1!
+	UFUNCTION(BlueprintCallable, Category = "Orchestrator | AI")
+	void TriggerNextRun();
+
+	// Tracks how many times we've run the simulation to generate new seeds
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Orchestrator | AI")
+	int32 RuntimeSeedOffset = 0;
 
 	// ---------- Sphere / Refs ----------
 
@@ -224,10 +254,18 @@ private:
 	 *   - MaxTries: maximum random attempts
 	 * result: True if a cell was found; otherwise False.
 	 */
+	// bool FindRandomSpawnCell(
+	// 	int32 &OutFace,
+	// 	int32 &OutX,
+	// 	int32 &OutY,
+	// 	int32 MinOpenSides,
+	// 	int32 MaxTries) const;
+
 	bool FindRandomSpawnCell(
 		int32 &OutFace,
 		int32 &OutX,
 		int32 &OutY,
 		int32 MinOpenSides,
-		int32 MaxTries) const;
+		int32 MaxTries,
+		int32 PointSeed) const; // <--- Added PointSeed here!
 };
