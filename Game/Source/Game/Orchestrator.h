@@ -11,6 +11,7 @@ class UMaze;
 class UInstancedStaticMeshComponent;
 class UStaticMesh;
 class UMaterialInterface;
+class AMyCharacterBase;
 
 /**
  * AOrchestrator
@@ -166,16 +167,51 @@ public:
 		float Duration = 0.12f
 	);
 
+	/**
+	 * desc : Rolls the maze opposite the desired move direction while stepping from one logical cell to the next.
+	 * args :
+	 *   - FromFace, FromX, FromY: current logical cell before the move
+	 *   - ToFace, ToX, ToY: next logical cell after the move
+	 *   - DesiredWorldMoveDirection: camera-relative tangent direction the player tried to move toward
+	 *   - Duration: rotation tween duration in seconds
+	 * result: None
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Orchestrator|Rotation")
+	void RotateMazeAgainstMoveDirection(
+		int32 FromFace, int32 FromX, int32 FromY,
+		int32 ToFace,   int32 ToX,   int32 ToY,
+		const FVector& DesiredWorldMoveDirection,
+		float Duration = 0.12f
+	);
+
+	/**
+	 * desc : Reports whether the maze actor is currently rotating between cells.
+	 * args : None
+	 * result: True while a maze-rotation move is active; otherwise False.
+	 */
+	UFUNCTION(BlueprintPure, Category = "Orchestrator|Rotation")
+	bool IsMazeRotating() const { return bRotatingMaze; }
+	
+	
+	//----- Character ------
+	UPROPERTY(BlueprintReadWrite, Category="Spawn")
+	AMyCharacterBase* SpawnedPawn = nullptr;
+
 protected:
 
 	//virtual void BeginPlay() override;
 
 	bool bRotatingMaze = false;
+	bool bUseSettledRollRotation = false;
 	float RotateElapsed = 0.f;
 	float RotateDuration = 0.12f;
+	float RotatePrimaryAngleRadians = 0.f;
+	float RotatePrimaryPhasePortion = 0.82f;
 
 	FQuat RotateStart;
+	FQuat RotateMidTarget;
 	FQuat RotateTarget;
+	FVector RotatePrimaryAxisWorld = FVector::UpVector;
 	
 	// ---------- Path Debug / Visualization ----------
 

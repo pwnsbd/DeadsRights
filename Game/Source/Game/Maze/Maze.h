@@ -71,6 +71,10 @@ public:
 		const FMazeNode &Node,
 		EMazeDir Dir,
 		FMazeNode &OutNode) const;
+	
+	// Bounds check
+	bool IsValid(int32 Face, int32 X, int32 Y) const;
+
 
 private:
 	// Convert (Face, X, Y) to flat index
@@ -79,8 +83,6 @@ private:
 		return Face * CellsPerFace * CellsPerFace + Y * CellsPerFace + X;
 	}
 
-	// Bounds check
-	bool IsValid(int32 Face, int32 X, int32 Y) const;
 
 private:
 	// ---- Internal Steps ----

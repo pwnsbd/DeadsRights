@@ -8,6 +8,7 @@
 #include "Kismet/GameplayStatics.h"
 #include "Components/CapsuleComponent.h"
 #include "Movement/GridMazePawn.h"
+#include "Movement/MyCharacterBase.h"
 /**
  * desc : Default constructor. Creates root + wall/path instanced mesh components and sets basic collision rules.
  * args : None
@@ -128,11 +129,21 @@ void AOrchestrator::Rebuild()
 
 	if (UWorld* World = GetWorld())
 	{
-		AGridMazePawn* Pawn = Cast<AGridMazePawn>(
-			UGameplayStatics::GetActorOfClass(World, AGridMazePawn::StaticClass())
-		);
+		AMyCharacterBase* Character = SpawnedPawn;
+		if (!Character)
+		{
+			Character = Cast<AMyCharacterBase>(
+				UGameplayStatics::GetActorOfClass(World, AMyCharacterBase::StaticClass())
+			);
+		}
 
-		if (Pawn)
+		if (Character)
+		{
+			Character->RefreshAfterMazeRebuild();
+		}
+		else if (AGridMazePawn* Pawn = Cast<AGridMazePawn>(
+			UGameplayStatics::GetActorOfClass(World, AGridMazePawn::StaticClass())
+		))
 		{
 			Pawn->RefreshAfterMazeRebuild();
 		}
@@ -220,20 +231,104 @@ void AOrchestrator::RotateMazeToCell(
     float Duration
 )
 {
-    if (!SphereActor) return;
+    if (!SphereActor)
+    {
+        return;
+    }
 
     const FVector FromLocal = SphereActor->GetCellCenterLocal(FromFace, FromX, FromY).GetSafeNormal();
     const FVector ToLocal   = SphereActor->GetCellCenterLocal(ToFace,   ToX,   ToY).GetSafeNormal();
 
-    if (FromLocal.IsNearlyZero() || ToLocal.IsNearlyZero()) return;
+    if (FromLocal.IsNearlyZero() || ToLocal.IsNearlyZero())
+    {
+        return;
+    }
 
     const FQuat Delta = FQuat::FindBetweenNormals(ToLocal, FromLocal);
 
     RotateStart = GetActorQuat();
+    RotateMidTarget = RotateStart;
     RotateTarget = Delta * RotateStart;
+    RotatePrimaryAxisWorld = FVector::UpVector;
+    RotatePrimaryAngleRadians = 0.f;
 
     RotateElapsed = 0.f;
     RotateDuration = FMath::Max(0.001f, Duration);
+    bUseSettledRollRotation = false;
+    bRotatingMaze = true;
+}
+
+void AOrchestrator::RotateMazeAgainstMoveDirection(
+    int32 FromFace, int32 FromX, int32 FromY,
+    int32 ToFace,   int32 ToX,   int32 ToY,
+    const FVector& DesiredWorldMoveDirection,
+    float Duration
+)
+{
+    if (!SphereActor || bRotatingMaze)
+    {
+        return;
+    }
+
+    const FVector FromLocal = SphereActor->GetCellCenterLocal(FromFace, FromX, FromY).GetSafeNormal();
+    const FVector ToLocal   = SphereActor->GetCellCenterLocal(ToFace,   ToX,   ToY).GetSafeNormal();
+
+    if (FromLocal.IsNearlyZero() || ToLocal.IsNearlyZero())
+    {
+        return;
+    }
+
+    const float StepAngleRadians = FMath::Acos(FMath::Clamp(FVector::DotProduct(FromLocal, ToLocal), -1.f, 1.f));
+    if (StepAngleRadians <= KINDA_SMALL_NUMBER)
+    {
+        return;
+    }
+
+    const FVector SphereCenterWorld = GetActorTransform().TransformPosition(FVector::ZeroVector);
+    const FVector FromWorld = SphereActor->GetCellCenterWorld(FromFace, FromX, FromY);
+    const FVector SurfaceNormal = (FromWorld - SphereCenterWorld).GetSafeNormal();
+    const FVector DesiredTangent = FVector::VectorPlaneProject(DesiredWorldMoveDirection, SurfaceNormal).GetSafeNormal();
+    const FVector RotationAxisWorld = FVector::CrossProduct(DesiredTangent, SurfaceNormal).GetSafeNormal();
+
+    if (SurfaceNormal.IsNearlyZero() || DesiredTangent.IsNearlyZero() || RotationAxisWorld.IsNearlyZero())
+    {
+        RotateMazeToCell(FromFace, FromX, FromY, ToFace, ToX, ToY, Duration);
+        return;
+    }
+
+    const FVector ToWorld = SphereActor->GetCellCenterWorld(ToFace, ToX, ToY);
+    const FVector ToWorldDirection = (ToWorld - SphereCenterWorld).GetSafeNormal();
+    if (ToWorldDirection.IsNearlyZero())
+    {
+        RotateMazeToCell(FromFace, FromX, FromY, ToFace, ToX, ToY, Duration);
+        return;
+    }
+
+    const FQuat PrimaryDelta(RotationAxisWorld, StepAngleRadians);
+    const FVector PrimaryTargetDirection = PrimaryDelta.RotateVector(ToWorldDirection).GetSafeNormal();
+    if (PrimaryTargetDirection.IsNearlyZero())
+    {
+        RotateMazeToCell(FromFace, FromX, FromY, ToFace, ToX, ToY, Duration);
+        return;
+    }
+
+    const float CorrectionAngleRadians = FMath::Acos(FMath::Clamp(FVector::DotProduct(PrimaryTargetDirection, SurfaceNormal), -1.f, 1.f));
+    const FVector CorrectionAxisWorld = FVector::CrossProduct(PrimaryTargetDirection, SurfaceNormal).GetSafeNormal();
+
+    RotateStart = GetActorQuat();
+    RotateMidTarget = (PrimaryDelta * RotateStart).GetNormalized();
+    RotateTarget = RotateMidTarget;
+    RotatePrimaryAxisWorld = RotationAxisWorld;
+    RotatePrimaryAngleRadians = StepAngleRadians;
+    RotateElapsed = 0.f;
+    RotateDuration = FMath::Max(0.001f, Duration);
+    bUseSettledRollRotation = true;
+
+    if (!CorrectionAxisWorld.IsNearlyZero() && CorrectionAngleRadians > KINDA_SMALL_NUMBER)
+    {
+        RotateTarget = (FQuat(CorrectionAxisWorld, CorrectionAngleRadians) * RotateMidTarget).GetNormalized();
+    }
+
     bRotatingMaze = true;
 }
 
@@ -246,12 +341,38 @@ void AOrchestrator::Tick(float DeltaSeconds)
     RotateElapsed += DeltaSeconds;
 
     const float Alpha = FMath::Clamp(RotateElapsed / RotateDuration, 0.f, 1.f);
-    const FQuat NewQ = FQuat::Slerp(RotateStart, RotateTarget, Alpha).GetNormalized();
+    FQuat NewQ = RotateTarget;
+
+    if (bUseSettledRollRotation)
+    {
+        const float SafePrimaryPhase = FMath::Clamp(RotatePrimaryPhasePortion, 0.05f, 0.95f);
+        if (Alpha < SafePrimaryPhase)
+        {
+            const float PhaseAlpha = FMath::Clamp(Alpha / SafePrimaryPhase, 0.f, 1.f);
+            const float SmoothPhaseAlpha = FMath::InterpEaseInOut(0.f, 1.f, PhaseAlpha, 2.0f);
+            NewQ = (FQuat(RotatePrimaryAxisWorld, RotatePrimaryAngleRadians * SmoothPhaseAlpha) * RotateStart).GetNormalized();
+        }
+        else
+        {
+            const float PhaseAlpha = FMath::Clamp(
+                (Alpha - SafePrimaryPhase) / FMath::Max(KINDA_SMALL_NUMBER, 1.f - SafePrimaryPhase),
+                0.f,
+                1.f);
+            const float SmoothPhaseAlpha = FMath::InterpEaseInOut(0.f, 1.f, PhaseAlpha, 2.0f);
+            NewQ = FQuat::Slerp(RotateMidTarget, RotateTarget, SmoothPhaseAlpha).GetNormalized();
+        }
+    }
+    else
+    {
+        NewQ = FQuat::Slerp(RotateStart, RotateTarget, Alpha).GetNormalized();
+    }
 
     SetActorRotation(NewQ);
 
     if (Alpha >= 1.f)
     {
+        SetActorRotation(RotateTarget);
+        bUseSettledRollRotation = false;
         bRotatingMaze = false;
     }
 }
