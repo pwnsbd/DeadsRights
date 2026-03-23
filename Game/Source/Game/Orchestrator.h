@@ -45,6 +45,8 @@ public:
 	 */
 	virtual void OnConstruction(const FTransform &Transform) override;
 
+	virtual void BeginPlay() override; // <--- ADD THIS LINE HERE!
+
 	/**
 	 * desc : Full pipeline rebuild:
 	 *        - resolves SphereActor from child actor component
@@ -99,8 +101,6 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Orchestrator | AI")
 	UMazeNavigator *Navigator = nullptr;
 
-	// ---------- AI ----------
-
 	// The Blueprint class of your AI Character
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Orchestrator | AI")
 	TSubclassOf<class AMazeRunner> MazeRunnerClass;
@@ -128,6 +128,26 @@ public:
 	// Tracks how many times we've run the simulation to generate new seeds
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Orchestrator | AI")
 	int32 RuntimeSeedOffset = 0;
+
+	// How many artifacts should we spawn?
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Orchestrator | AI")
+	int32 NumArtifactsToSpawn = 1;
+
+	// List of all artifacts currently on the sphere
+	UPROPERTY()
+	TArray<AStaticMeshActor *> ActiveArtifacts;
+
+	// The specific artifact the Runner is currently hunting
+	UPROPERTY()
+	AStaticMeshActor *CurrentTargetArtifact = nullptr;
+
+	// The starting spawn point reference
+	UPROPERTY()
+	AStaticMeshActor *StartMarkerRef = nullptr;
+
+	// The function that runs when the Runner yells "I'm done!"
+	UFUNCTION()
+	void OnRunnerReachedArtifact();
 
 	// ---------- Sphere / Refs ----------
 
@@ -229,13 +249,13 @@ private:
 	 */
 	void BuildWallsFromMaze();
 
-	/**
-	 * desc : Debug/test pathfinding routine. Picks start/end points, runs Navigator->FindPath(),
-	 *        then draws results via instanced meshes or debug spheres.
-	 * args : None
-	 * result: None
-	 */
-	void Astar();
+	// /**
+	//  * desc : Debug/test pathfinding routine. Picks start/end points, runs Navigator->FindPath(),
+	//  *        then draws results via instanced meshes or debug spheres.
+	//  * args : None
+	//  * result: None
+	//  */
+	// void Astar();
 
 	/**
 	 * desc : Checks if a given cell meets spawn requirements (at least MinOpenSides open directions).

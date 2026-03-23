@@ -7,6 +7,8 @@ AMazeRunner::AMazeRunner()
 	PrimaryActorTick.bCanEverTick = true;
 	MeshComp = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("MeshComp"));
 	SetRootComponent(MeshComp);
+
+	MeshComp->SetWorldScale3D(FVector(0.5f, 0.5f, 0.5f));
 }
 
 void AMazeRunner::SetPath(const TArray<FVector> &NewLocalPath, ACubeToSphere *InSphereActor)
@@ -31,7 +33,7 @@ void AMazeRunner::Tick(float DeltaTime)
 	// 1. PURE LOCAL SPACE: Get location relative to the attached sphere
 	FVector CurrentLocal = GetRootComponent()->GetRelativeLocation();
 
-	// 2. THE HOVER FIX: Path nodes are exactly on the floor, but the runner spawns 17 units above it!
+	// 2. THE HOVER FIX
 	FVector BaseTarget = PathToFollow[CurrentTargetIndex];
 	FVector UpDir = BaseTarget.GetSafeNormal();
 	FVector TargetLocal = BaseTarget + (UpDir * 17.0f);
@@ -41,26 +43,19 @@ void AMazeRunner::Tick(float DeltaTime)
 	{
 		CurrentTargetIndex++;
 
-		// If we finished the path, clean up and disappear
 		if (!PathToFollow.IsValidIndex(CurrentTargetIndex))
 		{
 			bIsMoving = false;
-			for (AActor *Marker : LinkedMarkers)
-			{
-				if (Marker)
-					Marker->Destroy();
-			}
-			this->Destroy();
+			OnPathCompleted.Broadcast();
 			return;
 		}
 
-		// Immediately grab the next target to keep movement smooth
 		BaseTarget = PathToFollow[CurrentTargetIndex];
-		UpDir = BaseTarget.GetSafeNormal();
+		UpDir = BaseTarget.GetSafeNormal(); // FIXED: No FVector here!
 		TargetLocal = BaseTarget + (UpDir * 17.0f);
 	}
 
-	// 4. THE CURVE FIX: Move smoothly, then push the step out to the sphere surface!
+	// 4. Move smoothly, then push the step out to the sphere surface!
 	FVector NewLocal = FMath::VInterpConstantTo(CurrentLocal, TargetLocal, DeltaTime, MovementSpeed);
 
 	float HoverRadius = TargetLocal.Size();

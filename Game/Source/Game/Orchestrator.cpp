@@ -109,8 +109,6 @@ void AOrchestrator::Rebuild()
 		Navigator = NewObject<UMazeNavigator>(this);
 	}
 	Navigator->Init(Maze, SphereActor);
-
-	Astar();
 }
 
 /**
@@ -415,92 +413,127 @@ void AOrchestrator::BuildWallsFromMaze()
  * args : None
  * result: None
  */
-void AOrchestrator::TriggerNextRun()
-{
-	// Offset the seed by 10 every time we press the button so we get brand new points!
-	RuntimeSeedOffset += 10;
 
-	// Rerun the generation
-	Astar();
-}
-
-void AOrchestrator::Astar()
+void AOrchestrator::BeginPlay()
 {
-	if (!SphereActor || !MazeRunnerClass || !Navigator || !MarkerMesh)
+	Super::BeginPlay();
+
+	if (!SphereActor || !MazeRunnerClass || !MarkerMesh)
 		return;
 
-	// 1. Clean up old runner AND old markers so they don't pile up in the editor!
-	if (ActiveRunner)
+	FActorSpawnParameters SpawnParams;
+	SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+
+	FTransform StartTransform;
+	// Pick ONE random spot to spawn the Runner at the very beginning of the game
+	if (GetRandomSpawnTransform(StartTransform, 15.0f, 1, 5000, 1))
 	{
-		for (AActor *Marker : ActiveRunner->LinkedMarkers)
+		StartMarkerRef = GetWorld()->SpawnActor<AStaticMeshActor>(AStaticMeshActor::StaticClass(), StartTransform, SpawnParams);
+		if (StartMarkerRef)
 		{
-			if (Marker)
-				Marker->Destroy();
-		}
-		ActiveRunner->Destroy();
-		ActiveRunner = nullptr;
-	}
-	FlushPersistentDebugLines(GetWorld());
-
-	// 2. Add the RuntimeSeedOffset
-	FTransform StartTransform, EndTransform;
-	if (!GetRandomSpawnTransform(StartTransform, 15.0f, 1, 5000, 1 + RuntimeSeedOffset) ||
-		!GetRandomSpawnTransform(EndTransform, 15.0f, 1, 5000, 2 + RuntimeSeedOffset))
-		return;
-
-	TArray<FVector> PathResult;
-	if (Navigator->FindPath(StartTransform.GetLocation(), EndTransform.GetLocation(), PathResult))
-	{
-		FActorSpawnParameters SpawnParams;
-		SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-
-		// 3. Spawn START Marker
-		AStaticMeshActor *StartMarker = GetWorld()->SpawnActor<AStaticMeshActor>(AStaticMeshActor::StaticClass(), StartTransform, SpawnParams);
-		if (StartMarker)
-		{
-			// CRITICAL FIX: Set to Movable FIRST, then Attach!
-			StartMarker->GetStaticMeshComponent()->SetMobility(EComponentMobility::Movable);
-			StartMarker->AttachToActor(SphereActor, FAttachmentTransformRules::KeepWorldTransform);
-
-			StartMarker->GetStaticMeshComponent()->SetStaticMesh(MarkerMesh);
+			StartMarkerRef->GetStaticMeshComponent()->SetMobility(EComponentMobility::Movable);
+			StartMarkerRef->AttachToActor(SphereActor, FAttachmentTransformRules::KeepWorldTransform);
+			StartMarkerRef->GetStaticMeshComponent()->SetStaticMesh(MarkerMesh);
 			if (StartMaterial)
-				StartMarker->GetStaticMeshComponent()->SetMaterial(0, StartMaterial);
-			StartMarker->SetActorScale3D(FVector(0.25f));
+				StartMarkerRef->GetStaticMeshComponent()->SetMaterial(0, StartMaterial);
+			StartMarkerRef->SetActorScale3D(FVector(0.25f));
 		}
 
-		// 4. Spawn END Marker
-		AStaticMeshActor *EndMarker = GetWorld()->SpawnActor<AStaticMeshActor>(AStaticMeshActor::StaticClass(), EndTransform, SpawnParams);
-		if (EndMarker)
-		{
-			// CRITICAL FIX: Set to Movable FIRST, then Attach!
-			EndMarker->GetStaticMeshComponent()->SetMobility(EComponentMobility::Movable);
-			EndMarker->AttachToActor(SphereActor, FAttachmentTransformRules::KeepWorldTransform);
-
-			EndMarker->GetStaticMeshComponent()->SetStaticMesh(MarkerMesh);
-			if (EndMaterial)
-				EndMarker->GetStaticMeshComponent()->SetMaterial(0, EndMaterial);
-			EndMarker->SetActorScale3D(FVector(0.25f));
-		}
-
-		TArray<FVector> LocalPath;
-		FTransform SphereTransform = SphereActor->GetTransform();
-		for (const FVector &WorldPoint : PathResult)
-		{
-			// InverseTransformPosition converts absolute GPS into "relative to the sphere"
-			LocalPath.Add(SphereTransform.InverseTransformPosition(WorldPoint));
-		}
-
-		// 5. Spawn Runner
 		ActiveRunner = GetWorld()->SpawnActor<AMazeRunner>(MazeRunnerClass, StartTransform, SpawnParams);
 		if (ActiveRunner)
 		{
-			// ---> THIS IS THE MISSING SUPERGLUE! <---
 			ActiveRunner->AttachToActor(SphereActor, FAttachmentTransformRules::KeepWorldTransform);
 
-			ActiveRunner->LinkedMarkers.Add(StartMarker);
-			ActiveRunner->LinkedMarkers.Add(EndMarker);
+			// Hook up the ears! When it finishes a path, it runs our Brain function.
+			ActiveRunner->OnPathCompleted.AddDynamic(this, &AOrchestrator::OnRunnerReachedArtifact);
+		}
+	}
+}
 
-			// Pass the LocalPath and the Sphere pointer!
+void AOrchestrator::TriggerNextRun() // Bound to your Shift + 1
+{
+	RuntimeSeedOffset += 100;
+	if (!SphereActor || !MarkerMesh || !ActiveRunner)
+		return;
+
+	FActorSpawnParameters SpawnParams;
+	SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+
+	for (int32 i = 0; i < NumArtifactsToSpawn; ++i)
+	{
+		FTransform ArtTransform;
+		if (GetRandomSpawnTransform(ArtTransform, 15.0f, 1, 5000, 2 + RuntimeSeedOffset + i))
+		{
+			AStaticMeshActor *Artifact = GetWorld()->SpawnActor<AStaticMeshActor>(AStaticMeshActor::StaticClass(), ArtTransform, SpawnParams);
+			if (Artifact)
+			{
+				Artifact->GetStaticMeshComponent()->SetMobility(EComponentMobility::Movable);
+				Artifact->AttachToActor(SphereActor, FAttachmentTransformRules::KeepWorldTransform);
+				Artifact->GetStaticMeshComponent()->SetStaticMesh(MarkerMesh);
+				if (EndMaterial)
+					Artifact->GetStaticMeshComponent()->SetMaterial(0, EndMaterial);
+				Artifact->SetActorScale3D(FVector(0.25f));
+				ActiveArtifacts.Add(Artifact);
+			}
+		}
+	}
+
+	// If the Runner is idle (has no target), wake it up to hunt the new item!
+	if (!CurrentTargetArtifact)
+	{
+		OnRunnerReachedArtifact();
+	}
+}
+
+void AOrchestrator::OnRunnerReachedArtifact()
+{
+	// 1. Destroy collected artifact
+	if (CurrentTargetArtifact)
+	{
+		ActiveArtifacts.Remove(CurrentTargetArtifact);
+		CurrentTargetArtifact->Destroy();
+		CurrentTargetArtifact = nullptr;
+	}
+
+	// 2. Are we out of artifacts? Do nothing! Stand idle.
+	if (ActiveArtifacts.IsEmpty())
+	{
+		return;
+	}
+
+	// 3. PERFORMANCE FIX: Find closest artifact using straight-line distance FIRST!
+	AStaticMeshActor *BestArtifact = nullptr;
+	float ClosestDistance = MAX_FLT; // Start with infinitely far away
+	FVector StartLoc = ActiveRunner->GetActorLocation();
+
+	for (AStaticMeshActor *Artifact : ActiveArtifacts)
+	{
+		// DistSquared is heavily optimized for CPUs because it skips calculating square roots!
+		float Dist = FVector::DistSquared(StartLoc, Artifact->GetActorLocation());
+		if (Dist < ClosestDistance)
+		{
+			ClosestDistance = Dist;
+			BestArtifact = Artifact;
+		}
+	}
+
+	// 4. ONLY RUN A* EXACTLY ONCE FOR THE WINNING ARTIFACT
+	if (BestArtifact)
+	{
+		TArray<FVector> BestPath;
+
+		// We only calculate the maze path for the closest item
+		if (Navigator->FindPath(StartLoc, BestArtifact->GetActorLocation(), BestPath))
+		{
+			CurrentTargetArtifact = BestArtifact;
+
+			TArray<FVector> LocalPath;
+			FTransform SphereTransform = SphereActor->GetTransform();
+			for (const FVector &WorldPoint : BestPath)
+			{
+				LocalPath.Add(SphereTransform.InverseTransformPosition(WorldPoint));
+			}
+
 			ActiveRunner->SetPath(LocalPath, SphereActor);
 		}
 	}

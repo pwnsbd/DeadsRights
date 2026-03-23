@@ -7,6 +7,9 @@
 class UStaticMeshComponent;
 class ACubeToSphere; // <--- 1. Tells the header this class exists!
 
+// 1. ADD THIS DELEGATE MACRO RIGHT HERE (Above the UCLASS!)
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnPathCompletedSignature);
+
 UCLASS()
 class GAME_API AMazeRunner : public AActor
 {
@@ -22,9 +25,9 @@ public:
 	// 2. Update the SetPath signature
 	void SetPath(const TArray<FVector> &NewLocalPath, ACubeToSphere *InSphereActor);
 
-	/** Actors that should be destroyed when the runner reaches the end. */
-	UPROPERTY()
-	TArray<AActor *> LinkedMarkers;
+	// 2. ADD THE EVENT DISPATCHER
+	UPROPERTY(BlueprintAssignable)
+	FOnPathCompletedSignature OnPathCompleted;
 
 protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
