@@ -70,6 +70,7 @@ protected:
 
 	// ---- Input ----
 	void HandleMoveInput(const FInputActionValue& Value);
+	void HandleMoveReleased(const FInputActionValue& Value);
 	void HandleLookInput(const FInputActionValue& Value);
 
 	// ---- Core movement ----

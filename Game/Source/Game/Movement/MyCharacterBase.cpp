@@ -126,7 +126,12 @@ void AMyCharacterBase::SetupPlayerInputComponent(UInputComponent* PlayerInputCom
 	if (UEnhancedInputComponent* EIC = Cast<UEnhancedInputComponent>(PlayerInputComponent))
 	{
 		if (IA_Move)
-			EIC->BindAction(IA_Move, ETriggerEvent::Started,   this, &AMyCharacterBase::HandleMoveInput);
+		{
+			// Triggered fires every frame while held → smooth hold-to-move.
+			// Completed clears the queue so the character stops cleanly on release.
+			EIC->BindAction(IA_Move, ETriggerEvent::Triggered,  this, &AMyCharacterBase::HandleMoveInput);
+			EIC->BindAction(IA_Move, ETriggerEvent::Completed,  this, &AMyCharacterBase::HandleMoveReleased);
+		}
 
 		// Mouse look fires every frame while the mouse is moving.
 		if (IA_Look)
@@ -282,6 +287,15 @@ void AMyCharacterBase::HandleMoveInput(const FInputActionValue& Value)
 		MoveDir = ScreenRight * FMath::Sign(Axis.X);
 
 	TryMove(ResolveDir(MoveDir));
+}
+
+// =============================================================================
+// HandleMoveReleased  —  key up: cancel any pending queued step
+// =============================================================================
+
+void AMyCharacterBase::HandleMoveReleased(const FInputActionValue& /*Value*/)
+{
+	bMoveQueued = false;
 }
 
 // =============================================================================
