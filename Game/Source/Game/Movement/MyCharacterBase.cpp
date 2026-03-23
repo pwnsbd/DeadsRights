@@ -8,7 +8,6 @@
 #include "EnhancedInputSubsystems.h"
 #include "UObject/ConstructorHelpers.h"
 #include "Kismet/GameplayStatics.h"
-#include "DrawDebugHelpers.h"
 #include "GameFramework/PlayerController.h"
 
 #include "Orchestrator.h"
@@ -43,20 +42,16 @@ AMyCharacterBase::AMyCharacterBase()
 	PrimaryActorTick.bCanEverTick = true;
 	AutoPossessPlayer = EAutoReceiveInput::Disabled;
 
-	// Fall back to the existing input assets so Blueprint sub-classes that have
-	// not yet set their overrides still work out of the box.
-	static ConstructorHelpers::FObjectFinder<UInputMappingContext> GridInputContextFinder(
+	static ConstructorHelpers::FObjectFinder<UInputMappingContext> IMCFinder(
 		TEXT("/Game/IMC_Controller.IMC_Controller"));
-	static ConstructorHelpers::FObjectFinder<UInputAction> NorthFinder(TEXT("/Game/IA_GridNorth.IA_GridNorth"));
-	static ConstructorHelpers::FObjectFinder<UInputAction> SouthFinder(TEXT("/Game/IA_GridSouth.IA_GridSouth"));
-	static ConstructorHelpers::FObjectFinder<UInputAction> WestFinder (TEXT("/Game/IA_GridWest.IA_GridWest"));
-	static ConstructorHelpers::FObjectFinder<UInputAction> EastFinder (TEXT("/Game/IA_GridEast.IA_GridEast"));
+	static ConstructorHelpers::FObjectFinder<UInputAction> MoveFinder(
+		TEXT("/Game/IA_Move.IA_Move"));
+	static ConstructorHelpers::FObjectFinder<UInputAction> LookFinder(
+		TEXT("/Game/IA_Look.IA_Look"));
 
-	if (!GridInputContext && GridInputContextFinder.Succeeded()) GridInputContext = GridInputContextFinder.Object;
-	if (!IA_North && NorthFinder.Succeeded()) IA_North = NorthFinder.Object;
-	if (!IA_South && SouthFinder.Succeeded()) IA_South = SouthFinder.Object;
-	if (!IA_West  && WestFinder.Succeeded()) IA_West  = WestFinder .Object;
-	if (!IA_East  && EastFinder .Succeeded()) IA_East  = EastFinder .Object;
+	if (!GridInputContext && IMCFinder.Succeeded())  GridInputContext = IMCFinder.Object;
+	if (!IA_Move       && MoveFinder.Succeeded())   IA_Move          = MoveFinder.Object;
+	if (!IA_Look       && LookFinder.Succeeded())   IA_Look          = LookFinder.Object;
 }
 
 // =============================================================================
@@ -65,23 +60,15 @@ AMyCharacterBase::AMyCharacterBase()
 
 void AMyCharacterBase::CacheCharacterComponents()
 {
-	CapsuleComp  = FindComponentByClass<UCapsuleComponent>();
-	CameraComp   = FindComponentByClass<UCameraComponent>();
+	CapsuleComp = FindComponentByClass<UCapsuleComponent>();
+	CameraComp  = FindComponentByClass<UCameraComponent>();
 
 	TArray<UStaticMeshComponent*> Meshes;
 	GetComponents<UStaticMeshComponent>(Meshes);
 	PawnMeshComp = Meshes.Num() > 0 ? Meshes[0] : nullptr;
 
-	// -------------------------------------------------------------------------
-	// Disable physical collision between the capsule and wall meshes.
-	//
-	// WHY: The wall geometry on a spherified cube is curved and thin.  Unreal's
-	// physics engine struggles to resolve capsule collisions against such shapes
-	// reliably — the character gets pushed in random directions or tunnels through.
-	//
-	// Instead, we gate all movement through the maze logical data (IsOpen checks).
-	// The capsule keeps QueryOnly so it still interacts with triggers/overlaps.
-	// -------------------------------------------------------------------------
+	// Disable physics-driven collision so walls don't push the character.
+	// All wall blocking is handled through logical IsOpen() checks instead.
 	if (CapsuleComp)
 	{
 		CapsuleComp->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
@@ -91,7 +78,7 @@ void AMyCharacterBase::CacheCharacterComponents()
 }
 
 // =============================================================================
-// BeginPlay / Tick / Input setup
+// BeginPlay
 // =============================================================================
 
 void AMyCharacterBase::BeginPlay()
@@ -101,11 +88,20 @@ void AMyCharacterBase::BeginPlay()
 	RefreshAfterMazeRebuild();
 }
 
+// =============================================================================
+// Tick
+// =============================================================================
+
 void AMyCharacterBase::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
-	UpdateMoveTween(DeltaSeconds);
+	UpdateTween(DeltaSeconds);
+	UpdateCamera(DeltaSeconds);
 }
+
+// =============================================================================
+// SetupPlayerInputComponent
+// =============================================================================
 
 void AMyCharacterBase::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
 {
@@ -115,7 +111,8 @@ void AMyCharacterBase::SetupPlayerInputComponent(UInputComponent* PlayerInputCom
 	{
 		if (ULocalPlayer* LP = PC->GetLocalPlayer())
 		{
-			if (UEnhancedInputLocalPlayerSubsystem* Sub = LP->GetSubsystem<UEnhancedInputLocalPlayerSubsystem>())
+			if (UEnhancedInputLocalPlayerSubsystem* Sub =
+				LP->GetSubsystem<UEnhancedInputLocalPlayerSubsystem>())
 			{
 				if (GridInputContext)
 				{
@@ -128,11 +125,25 @@ void AMyCharacterBase::SetupPlayerInputComponent(UInputComponent* PlayerInputCom
 
 	if (UEnhancedInputComponent* EIC = Cast<UEnhancedInputComponent>(PlayerInputComponent))
 	{
-		if (IA_North) EIC->BindAction(IA_North, ETriggerEvent::Started, this, &AMyCharacterBase::HandleMoveForwardInput);
-		if (IA_South) EIC->BindAction(IA_South, ETriggerEvent::Started, this, &AMyCharacterBase::HandleMoveBackwardInput);
-		if (IA_West)  EIC->BindAction(IA_West,  ETriggerEvent::Started, this, &AMyCharacterBase::HandleMoveLeftInput);
-		if (IA_East)  EIC->BindAction(IA_East,  ETriggerEvent::Started, this, &AMyCharacterBase::HandleMoveRightInput);
+		if (IA_Move)
+			EIC->BindAction(IA_Move, ETriggerEvent::Started,   this, &AMyCharacterBase::HandleMoveInput);
+
+		// Mouse look fires every frame while the mouse is moving.
+		if (IA_Look)
+			EIC->BindAction(IA_Look, ETriggerEvent::Triggered, this, &AMyCharacterBase::HandleLookInput);
 	}
+}
+
+// =============================================================================
+// CalcCamera  —  reads pre-computed state from UpdateCamera()
+// =============================================================================
+
+void AMyCharacterBase::CalcCamera(float DeltaTime, FMinimalViewInfo& OutResult)
+{
+	OutResult.Location              = CamWorldPos;
+	OutResult.Rotation              = CamQuat.Rotator();
+	OutResult.FOV                   = CameraFOV;
+	OutResult.bConstrainAspectRatio = false;
 }
 
 // =============================================================================
@@ -149,17 +160,15 @@ void AMyCharacterBase::InitializeMazeReferences(
 
 void AMyCharacterBase::RefreshAfterMazeRebuild()
 {
-	// Reset movement state on every rebuild so we start clean.
-	bMoveTweenActive  = false;
-	MoveTweenAlpha    = 0.f;
-	bMoveQueued       = false;
-	CameraUpHint      = FVector::ZeroVector;
-	bCameraQuatInit   = false; // force CalcCamera to snap on the next frame
-	bCharFixedPosInit = false; // recompute fixed position from the new start cell
+	// Reset all runtime state so a rebuild starts clean.
+	bTweenActive = false;
+	TweenAlpha   = 0.f;
+	bMoveQueued  = false;
+	bCamInit     = false;
 
 	CacheCharacterComponents();
 
-	// Auto-locate the orchestrator if not yet wired.
+	// Auto-locate orchestrator if not wired by Blueprint.
 	if (!Orchestrator && GetWorld())
 	{
 		Orchestrator = Cast<AOrchestrator>(
@@ -168,7 +177,8 @@ void AMyCharacterBase::RefreshAfterMazeRebuild()
 
 	if (Orchestrator)
 	{
-		InitializeMazeReferences(Orchestrator, Orchestrator->GetSphereActor(), Orchestrator->GetMaze());
+		InitializeMazeReferences(
+			Orchestrator, Orchestrator->GetSphereActor(), Orchestrator->GetMaze());
 	}
 
 	if (!Sphere || !Maze)
@@ -177,18 +187,20 @@ void AMyCharacterBase::RefreshAfterMazeRebuild()
 		return;
 	}
 
-	// Choose spawn cell.
-	const float CapsuleHH = CapsuleComp ? CapsuleComp->GetScaledCapsuleHalfHeight() : 88.f;
-	FTransform SpawnTransform;
-
+	// Pick starting cell — prefer a random open cell from the orchestrator.
 	bool bFoundCell = false;
-	if (Orchestrator && Orchestrator->GetRandomSpawnTransform(SpawnTransform, CapsuleHH))
+	if (Orchestrator)
 	{
-		int32 SF = 0, SX = 0, SY = 0;
-		if (FindClosestMazeCellToWorldLocation(SpawnTransform.GetLocation(), SF, SX, SY))
+		const float CapsuleHH = CapsuleComp ? CapsuleComp->GetScaledCapsuleHalfHeight() : 88.f;
+		FTransform SpawnTransform;
+		if (Orchestrator->GetRandomSpawnTransform(SpawnTransform, CapsuleHH))
 		{
-			Face = SF; X = SX; Y = SY;
-			bFoundCell = true;
+			int32 SF, SX, SY;
+			if (FindClosestCell(SpawnTransform.GetLocation(), SF, SX, SY))
+			{
+				Face = SF; X = SX; Y = SY;
+				bFoundCell = true;
+			}
 		}
 	}
 
@@ -197,416 +209,313 @@ void AMyCharacterBase::RefreshAfterMazeRebuild()
 		Face = StartFace; X = StartX; Y = StartY;
 	}
 
-	SnapCharacterToCurrentCell();
+	SnapToCurrentCell();
 
-	// Initialise CameraUpHint to the face-local North direction so the camera
-	// has a sensible "screen up" direction on the very first frame.
+	// Seed the camera follow direction so it has a valid value before the first step.
 	{
-		FVector Fwd, Right, Up;
-		if (GetSphereAlignedBasisForCell(Face, X, Y, Fwd, Right, Up))
-		{
-			CameraUpHint = Fwd; // face-local North = initial "screen up"
-		}
+		const FVector SurfNorm = (GetActorLocation() - GetSphereCenter()).GetSafeNormal();
+		FVector Seed = FVector::VectorPlaneProject(GetActorQuat().GetAxisX(), SurfNorm).GetSafeNormal();
+		if (Seed.IsNearlyZero())
+			Seed = FVector::VectorPlaneProject(FVector::ForwardVector, SurfNorm).GetSafeNormal();
+		if (!Seed.IsNearlyZero())
+			CamFollowDir = Seed;
 	}
 
 	if (bAutoLogCurrentMazeFace) DumpCurrentMazeFaceAscii();
 
-	if (APlayerController* PC = GetWorld() ? GetWorld()->GetFirstPlayerController() : nullptr)
+	// Possess, set view target, and capture the mouse for GTA-style look.
+	if (UWorld* W = GetWorld())
 	{
-		if (PC->GetPawn() != this) PC->Possess(this);
-		PC->SetViewTargetWithBlend(this, 0.f);
+		if (APlayerController* PC = W->GetFirstPlayerController())
+		{
+			if (PC->GetPawn() != this) PC->Possess(this);
+			PC->SetViewTargetWithBlend(this, 0.f);
+			PC->SetInputMode(FInputModeGameOnly());
+			PC->SetShowMouseCursor(false);
+		}
 	}
 }
 
 // =============================================================================
-// CalcCamera  —  Stable overhead sphere-surface camera
+// PlaceOnCell
 // =============================================================================
-//
-// DESIGN
-// ------
-// The camera sits directly above the character along the sphere surface normal
-// at CameraArmLength distance.  It always looks straight down at the character.
-//
-// The hard problem is "screen up": what world direction appears at the top of
-// the screen?  A naive choice (world +Z) spins at the poles.  Tracking the
-// sphere actor's forward vector fails after it is rolled.
-//
-// Solution: CameraUpHint — the tangent direction the player LAST MOVED IN.
-//   • Initialised to face-local North on spawn.
-//   • Updated to the actual movement direction on every successful step.
-//   • Projected onto the current cell's tangent plane each frame so it is
-//     always truly tangential (no radial component).
-//
-// Result: "screen up" always matches where the player is heading.  The camera
-// rotates smoothly as the player turns corners, and never flips or spins
-// across face seams — because the hint is purely 3D world-space geometry.
 
-void AMyCharacterBase::CalcCamera(float DeltaTime, FMinimalViewInfo& OutResult)
+FTransform AMyCharacterBase::PlaceOnCell(int32 InFace, int32 InX, int32 InY)
 {
+	Face = InFace; X = InX; Y = InY;
+	SnapToCurrentCell();
+	return GetActorTransform();
+}
+
+// =============================================================================
+// Input handler
+// =============================================================================
+
+void AMyCharacterBase::HandleMoveInput(const FInputActionValue& Value)
+{
+	const FVector2D Axis = Value.Get<FVector2D>(); // X = right (D/A), Y = forward (W/S)
+	if (Axis.IsNearlyZero()) return;
+
 	const FVector CharPos    = GetActorLocation();
-	const FVector SphCenter  = GetBasisSphereCenterWorld();
-	const FVector SurfNormal = (CharPos - SphCenter).GetSafeNormal();
+	const FVector SurfNormal = (CharPos - GetSphereCenter()).GetSafeNormal();
 
-	// ----- Camera position -----
-	// Sit directly above the character along the outward sphere normal.
-	const FVector CamPos = CharPos + SurfNormal * CameraArmLength;
+	// Screen directions come from the camera's own orientation quaternion.
+	// CamQuat is built with MakeFromXZ(CamFwd, SurfaceUp), so:
+	//   GetAxisX() = camera forward  = what W should move toward
+	//   GetAxisY() = camera right    = what D should move toward
+	// Both are projected to the tangent plane so they stay on the sphere surface.
+	FVector ScreenFwd   = FVector::VectorPlaneProject(CamQuat.GetAxisX(), SurfNormal).GetSafeNormal();
+	FVector ScreenRight = FVector::VectorPlaneProject(CamQuat.GetAxisY(), SurfNormal).GetSafeNormal();
 
-	// CamForward: the direction the camera looks (from cam toward character).
-	// This equals -SurfNormal — the camera always stares straight at the surface.
-	const FVector CamForward = -SurfNormal;
-
-	// ----- Desired screen-up direction -----
-	// CameraUpHint is a world-space tangent vector set to the player's last
-	// movement direction.  Because it is tangent to the sphere it is already
-	// perpendicular to SurfNormal (= -CamForward), so the plane-projection
-	// below is mathematically a no-op — but we keep it for numerical safety.
-	FVector DesiredUp = FVector::ZeroVector;
-
-	if (!CameraUpHint.IsNearlyZero())
+	// Fallback if camera hasn't initialised yet.
+	if (!bCamInit || ScreenFwd.IsNearlyZero())
 	{
-		DesiredUp = FVector::VectorPlaneProject(CameraUpHint, CamForward).GetSafeNormal();
+		ScreenFwd   = FVector::VectorPlaneProject(CamFollowDir,                        SurfNormal).GetSafeNormal();
+		ScreenRight = FVector::VectorPlaneProject(FVector::CrossProduct(SurfNormal, ScreenFwd), SurfNormal).GetSafeNormal();
 	}
 
-	// Fallback A: use the previous camera frame's own "up" projected into
-	// the new camera plane.  This is far more stable than world-up because it
-	// carries the camera's last valid orientation forward in time — the camera
-	// will just drift very slowly rather than jumping.
-	if (DesiredUp.IsNearlyZero() && bCameraQuatInit)
-	{
-		const FVector PrevUp = CameraQuat.GetUpVector(); // local Z of last frame
-		DesiredUp = FVector::VectorPlaneProject(PrevUp, CamForward).GetSafeNormal();
-	}
-
-	// Fallback B: world axes — only reached if the camera has never been
-	// initialised yet (very first frame) and CameraUpHint is not set.
-	if (DesiredUp.IsNearlyZero())
-	{
-		DesiredUp = FVector::VectorPlaneProject(FVector::UpVector, CamForward).GetSafeNormal();
-	}
-	if (DesiredUp.IsNearlyZero())
-	{
-		DesiredUp = FVector::VectorPlaneProject(FVector::ForwardVector, CamForward).GetSafeNormal();
-	}
-	if (DesiredUp.IsNearlyZero())
-	{
-		// Absolute last resort — pick any axis not collinear with CamForward.
-		DesiredUp = FVector::VectorPlaneProject(FVector::RightVector, CamForward).GetSafeNormal();
-	}
-
-	// ----- Build the desired camera quaternion -----
-	// MakeFromXZ: local-X = look direction, local-Z = screen-up.
-	// We work with quaternions throughout to avoid gimbal lock.
-	// (FRotator at Pitch = ±90° is singular; FQuat never is.)
-	if (!DesiredUp.IsNearlyZero())
-	{
-		const FQuat TargetQuat = FRotationMatrix::MakeFromXZ(CamForward, DesiredUp).ToQuat();
-
-		if (!bCameraQuatInit)
-		{
-			// First frame: snap directly to the correct orientation so there is
-			// no "swoop in" from the identity quaternion.
-			CameraQuat      = TargetQuat;
-			bCameraQuatInit = true;
-		}
-		else
-		{
-			// Subsequent frames: slerp toward the target.
-			//
-			// WHY THIS FIXES THE FLIP
-			// ───────────────────────
-			// When MakeFromXZ is fed inputs that cross a mathematical
-			// discontinuity (e.g. Pitch sweeping through ±90° at the poles),
-			// the resulting quaternion can jump to its antipode — a 180° snap.
-			// Quaternion slerp always takes the SHORTEST arc, but only if we
-			// first force the two quaternions into the same hemisphere by
-			// negating the target when their dot product is negative.
-			//
-			// Speed = 8 /s  →  half-life ≈ 0.09 s  →  snappy yet smooth.
-			// Even if TargetQuat jumps 180° in one frame, CameraQuat will
-			// only rotate ~8° on a 60 Hz frame — imperceptible.
-
-			// Ensure we take the short arc (dot < 0 means antipodal).
-			const FQuat AlignedTarget = ((CameraQuat | TargetQuat) >= 0.f)
-			                            ? TargetQuat
-			                            : FQuat(-TargetQuat.X, -TargetQuat.Y,
-			                                    -TargetQuat.Z, -TargetQuat.W);
-
-			const float Alpha = FMath::Clamp(DeltaTime * 8.f, 0.f, 1.f);
-			CameraQuat = FQuat::Slerp(CameraQuat, AlignedTarget, Alpha);
-			CameraQuat.Normalize();
-		}
-	}
-
-	// ----- Write view info -----
-	OutResult.Location              = CamPos;
-	OutResult.Rotation              = CameraQuat.Rotator();
-	OutResult.FOV                   = CameraFOV;
-	OutResult.bConstrainAspectRatio = false;
-}
-
-// =============================================================================
-// GetBasisSphereCenterWorld
-// =============================================================================
-
-FVector AMyCharacterBase::GetBasisSphereCenterWorld() const
-{
-	if (Sphere)   return Sphere->GetActorTransform().GetLocation();
-	if (Orchestrator) return Orchestrator->GetActorTransform().GetLocation();
-	return FVector::ZeroVector;
-}
-
-// =============================================================================
-// GetCurrentCellSurfaceNormal
-// =============================================================================
-
-FVector AMyCharacterBase::GetCurrentCellSurfaceNormal() const
-{
-	if (!Sphere) return FVector::UpVector;
-	const FVector CellCenter = Sphere->GetCellCenterWorld(Face, X, Y);
-	return (CellCenter - GetBasisSphereCenterWorld()).GetSafeNormal();
-}
-
-// =============================================================================
-// GetCameraScreenUpInWorld
-// =============================================================================
-// Returns the tangential "screen up" direction for the current frame.
-// This is CameraUpHint projected onto the current cell tangent plane.
-
-FVector AMyCharacterBase::GetCameraScreenUpInWorld() const
-{
-	const FVector SurfNormal = GetCurrentCellSurfaceNormal();
-
-	if (!CameraUpHint.IsNearlyZero() && !SurfNormal.IsNearlyZero())
-	{
-		const FVector Projected = FVector::VectorPlaneProject(CameraUpHint, SurfNormal).GetSafeNormal();
-		if (!Projected.IsNearlyZero()) return Projected;
-	}
-
-	// Fallback: use the face-local North direction (always well-defined due to
-	// the neighbour-cell basis computation in GetSphereAlignedBasisForCell).
-	FVector Fwd, Right, Up;
-	if (GetSphereAlignedBasisForCell(Face, X, Y, Fwd, Right, Up))
-	{
-		return Fwd;
-	}
-
-	return FVector::ForwardVector;
-}
-
-// =============================================================================
-// GetSphereAlignedBasisForCell
-// =============================================================================
-//
-// WHY NEIGHBOUR CELLS INSTEAD OF THE SPHERE ACTOR'S AXES
-// -------------------------------------------------------
-// The intuitive approach — project Sphere->GetActorForwardVector() onto the
-// cell normal — breaks at the poles.  After RotateMazeAgainstMoveDirection rolls
-// the sphere, the actor's world-forward may end up nearly parallel to the pole
-// normal, giving a near-zero projection and an undefined "Forward" direction.
-//
-// Instead we sample the world positions of the two neighbours (X+1 and Y+1 on
-// the same face) and subtract the current cell centre.  Neighbour cells are
-// always physically close to the current cell regardless of how the sphere has
-// been rotated, so the resulting vectors are always well-conditioned.
-// This eliminates every pole singularity in one shot.
-
-bool AMyCharacterBase::GetSphereAlignedBasisForCell(
-	int32 InFace, int32 InX, int32 InY,
-	FVector& OutForward, FVector& OutRight, FVector& OutUp) const
-{
-	OutForward = FVector::ForwardVector;
-	OutRight   = FVector::RightVector;
-	OutUp      = FVector::UpVector;
-
-	if (!Sphere) return false;
-
-	const FVector CellCenter   = Sphere->GetCellCenterWorld(InFace, InX, InY);
-	const FVector SphereCenter = GetBasisSphereCenterWorld();
-
-	OutUp = (CellCenter - SphereCenter).GetSafeNormal();
-	if (OutUp.IsNearlyZero()) return false;
-
-	const int32 CPF = Sphere->GetCellsPerFace();
-
-	// ----- East direction  (+X in face grid) -----
-	FVector EastRaw;
-	if (InX + 1 < CPF)
-		EastRaw = Sphere->GetCellCenterWorld(InFace, InX + 1, InY) - CellCenter;
-	else if (InX - 1 >= 0)
-		EastRaw = CellCenter - Sphere->GetCellCenterWorld(InFace, InX - 1, InY);
+	// Dominant axis so exactly one direction fires per press.
+	FVector MoveDir;
+	if (FMath::Abs(Axis.Y) >= FMath::Abs(Axis.X))
+		MoveDir = ScreenFwd * FMath::Sign(Axis.Y);
 	else
-		EastRaw = Sphere->GetActorRightVector(); // CPF == 1 edge case
+		MoveDir = ScreenRight * FMath::Sign(Axis.X);
 
-	// ----- South direction (+Y in face grid) -----
-	// We derive South first, then negate it to get North (= OutForward).
-	FVector SouthRaw;
-	if (InY + 1 < CPF)
-		SouthRaw = Sphere->GetCellCenterWorld(InFace, InX, InY + 1) - CellCenter;
-	else if (InY - 1 >= 0)
-		SouthRaw = CellCenter - Sphere->GetCellCenterWorld(InFace, InX, InY - 1);
-	else
-		SouthRaw = Sphere->GetActorForwardVector();
+	TryMove(ResolveDir(MoveDir));
+}
 
-	// Project onto the tangent plane (strips the radial sphere-curvature component).
-	OutRight           = FVector::VectorPlaneProject(EastRaw,  OutUp).GetSafeNormal();
-	const FVector SouthDir = FVector::VectorPlaneProject(SouthRaw, OutUp).GetSafeNormal();
-	OutForward = -SouthDir; // North = −South
+// =============================================================================
+// HandleLookInput  —  mouse orbit
+// =============================================================================
 
-	// Final orthonormalization: keep OutUp authoritative, re-derive the other two.
-	if (!OutForward.IsNearlyZero() && !OutRight.IsNearlyZero())
+void AMyCharacterBase::HandleLookInput(const FInputActionValue& Value)
+{
+	const FVector2D Delta = Value.Get<FVector2D>(); // X = horizontal, Y = vertical
+	if (Delta.IsNearlyZero()) return;
+
+	const FVector SurfNorm = (GetActorLocation() - GetSphereCenter()).GetSafeNormal();
+
+	// --- Horizontal: orbit CamFollowDir around the surface normal ---
+	// Negative sign: mouse right → camera sweeps clockwise from above → character
+	// appears to turn left (same convention as GTA / most TPS games).
+	if (FMath::Abs(Delta.X) > KINDA_SMALL_NUMBER)
 	{
-		OutRight   = FVector::CrossProduct(OutUp, OutForward).GetSafeNormal();
-		OutForward = FVector::CrossProduct(OutRight, OutUp).GetSafeNormal();
-	}
-	else if (!OutRight.IsNearlyZero())
-	{
-		OutForward = FVector::CrossProduct(OutRight, OutUp).GetSafeNormal();
-	}
-	else if (!OutForward.IsNearlyZero())
-	{
-		OutRight = FVector::CrossProduct(OutUp, OutForward).GetSafeNormal();
-	}
-	else
-	{
-		return false; // Both degenerate — face has 1 cell and sphere axes are also parallel.
+		const FQuat   YawQ        = FQuat(SurfNorm,
+		                                  FMath::DegreesToRadians(-Delta.X * MouseSensitivity));
+		const FVector Rotated     = YawQ.RotateVector(CamFollowDir);
+		const FVector Reprojected = FVector::VectorPlaneProject(Rotated, SurfNorm).GetSafeNormal();
+		if (!Reprojected.IsNearlyZero())
+			CamFollowDir = Reprojected;
 	}
 
+	// --- Vertical: adjust elevation angle ---
+	// Mouse up (positive Delta.Y) raises the camera by default; flip with bInvertMouseY.
+	if (FMath::Abs(Delta.Y) > KINDA_SMALL_NUMBER)
+	{
+		const float Sign  = bInvertMouseY ? 1.f : -1.f;
+		CameraPitchAngle  = FMath::Clamp(
+		                        CameraPitchAngle + Sign * Delta.Y * MouseSensitivity,
+		                        5.f, 85.f);
+	}
+}
+
+// =============================================================================
+// TryMove
+// =============================================================================
+
+bool AMyCharacterBase::TryMove(EMazeDir Dir)
+{
+	// Queue one move while a tween is in progress.
+	if (bTweenActive)
+	{
+		bMoveQueued = true;
+		QueuedDir   = Dir;
+		return false;
+	}
+
+	if (!Maze || !Sphere) return false;
+
+	// Wall check.
+	const FMazeCell& Cell = Maze->GetCell(Face, X, Y);
+	if (!IsOpen(Cell, Dir)) return false;
+
+	// Locate neighbour (handles face transitions).
+	const FMazeNode NeighborNode = Maze->GetNeighborCell(FMazeNode(Face, X, Y), Dir, true);
+	if (!Maze->IsValid(NeighborNode.Face, NeighborNode.X, NeighborNode.Y)) return false;
+
+	const int32 NewFace = NeighborNode.Face;
+	const int32 NewX    = NeighborNode.X;
+	const int32 NewY    = NeighborNode.Y;
+
+	StartTween(Face, X, Y, NewFace, NewX, NewY);
+
+	// Update logical position immediately so queued moves resolve correctly.
+	Face = NewFace; X = NewX; Y = NewY;
 	return true;
 }
 
 // =============================================================================
-// Input handlers
+// StartTween
 // =============================================================================
-//
-// W/A/S/D map to screen-up / screen-down / screen-left / screen-right.
-//
-// "Screen up" is CameraUpHint (tangential, world-space).
-// "Screen right" is CrossProduct(ScreenUp, SurfaceNormal).
-//
-// Cross product derivation:
-//   CamForward = -SurfNormal  (camera looks down at sphere)
-//   ScreenRight = cross(CamForward, CamUp) = cross(-SurfNormal, ScreenUp)
-//                = cross(ScreenUp, SurfNormal)   [by anti-commutativity]
-//
-// All directions are then passed through ResolveMazeDirectionFromWorldVector
-// which picks the N/E/S/W maze direction whose 3D neighbour best matches.
-// This is pure 3D geometry — zero face-local coordinate math, zero pole issues.
 
-void AMyCharacterBase::HandleMoveForwardInput()
+void AMyCharacterBase::StartTween(
+	int32 OldFace, int32 OldX, int32 OldY,
+	int32 NewFace, int32 NewX, int32 NewY)
 {
-	const FVector ScreenUp = GetCameraScreenUpInWorld();
-	HandleMoveInputFromWorldDirection(ScreenUp);
-}
+	TweenSphereCenter = GetSphereCenter();
 
-void AMyCharacterBase::HandleMoveBackwardInput()
-{
-	const FVector ScreenUp = GetCameraScreenUpInWorld();
-	HandleMoveInputFromWorldDirection(-ScreenUp);
-}
+	const FVector OldSurfPos = GetCellSurfacePos(OldFace, OldX, OldY);
+	const FVector NewSurfPos = GetCellSurfacePos(NewFace, NewX, NewY);
 
-void AMyCharacterBase::HandleMoveRightInput()
-{
-	const FVector SurfNormal = GetCurrentCellSurfaceNormal();
-	const FVector ScreenUp   = GetCameraScreenUpInWorld();
+	TweenFromNormal = (OldSurfPos - TweenSphereCenter).GetSafeNormal();
+	TweenToNormal   = (NewSurfPos - TweenSphereCenter).GetSafeNormal();
 
-	// ScreenRight derivation:
-	// The camera matrix is built with MakeFromXZ(CamForward, CamUp) where
-	// CamForward = -SurfNormal and CamUp = ScreenUp.
-	// Inside MakeFromXZ, local-Y (screen right) = normalize(CamUp × CamForward)
-	//                                            = normalize(ScreenUp × -SurfNormal)
-	//                                            = normalize(SurfNormal × ScreenUp)
-	// So the correct screen-right is SurfNormal × ScreenUp, NOT ScreenUp × SurfNormal.
-	const FVector ScreenRight = FVector::CrossProduct(SurfNormal, ScreenUp).GetSafeNormal();
-	HandleMoveInputFromWorldDirection(ScreenRight);
-}
+	// Radius from sphere centre to where the character's feet stand.
+	TweenRadius = FVector::Dist(TweenSphereCenter, GetCharStandPos(OldFace, OldX, OldY));
 
-void AMyCharacterBase::HandleMoveLeftInput()
-{
-	const FVector SurfNormal  = GetCurrentCellSurfaceNormal();
-	const FVector ScreenUp    = GetCameraScreenUpInWorld();
-	const FVector ScreenRight = FVector::CrossProduct(SurfNormal, ScreenUp).GetSafeNormal();
-	HandleMoveInputFromWorldDirection(-ScreenRight);
+	// Tangential direction of this step: project ToNormal onto the tangent plane
+	// at FromNormal.  This is the "forward" direction the character faces during
+	// the step.
+	const float Dot = FVector::DotProduct(TweenToNormal, TweenFromNormal);
+	TweenMoveDir = (TweenToNormal - Dot * TweenFromNormal).GetSafeNormal();
+
+	TweenAlpha   = 0.f;
+	bTweenActive = true;
 }
 
 // =============================================================================
-// HandleMoveInputFromWorldDirection
+// UpdateTween
 // =============================================================================
 
-void AMyCharacterBase::HandleMoveInputFromWorldDirection(const FVector& DesiredWorldDir)
+void AMyCharacterBase::UpdateTween(float DeltaSeconds)
 {
-	if (!Sphere || !Maze) return;
+	if (!bTweenActive) return;
 
-	const EMazeDir Dir = ResolveMazeDirectionFromWorldVector(DesiredWorldDir);
+	TweenAlpha = FMath::Min(TweenAlpha + DeltaSeconds / FMath::Max(StepDuration, 0.001f), 1.f);
 
-	if (bMoveTweenActive)
+	// Ease-in/out so starts and stops feel snappy but not jarring.
+	const float SmoothAlpha = FMath::InterpEaseInOut(0.f, 1.f, TweenAlpha, 2.f);
+
+	// Spherical arc: rotate FromNormal toward ToNormal by SmoothAlpha.
+	const FQuat  ArcQuat       = FQuat::FindBetweenNormals(TweenFromNormal, TweenToNormal);
+	const FVector CurrentNormal = FQuat::Slerp(FQuat::Identity, ArcQuat, SmoothAlpha)
+	                              .RotateVector(TweenFromNormal);
+
+	// Character always stands at TweenRadius above the sphere centre along the current normal.
+	SetActorLocation(TweenSphereCenter + CurrentNormal * TweenRadius);
+
+	// Character rotation: Up = surface normal, Forward = step direction.
+	const FVector CharUp  = CurrentNormal;
+	const FVector CharFwd = FVector::VectorPlaneProject(TweenMoveDir, CharUp).GetSafeNormal();
+
+	if (!CharFwd.IsNearlyZero())
 	{
-		// Queue the move — fires automatically when the current tween finishes.
-		// Overwrite any previously queued move (most recent intent wins).
-		bMoveQueued    = true;
-		QueuedDir      = Dir;
-		QueuedWorldDir = DesiredWorldDir;
+		SetActorRotation(FRotationMatrix::MakeFromXZ(CharFwd, CharUp).ToQuat());
 	}
-	else
+
+	if (TweenAlpha >= 1.f)
 	{
-		TryMoveInMazeDirection(Dir);
+		FinishTween();
 	}
 }
 
 // =============================================================================
-// ResolveMazeDirectionFromWorldVector
+// FinishTween
+// =============================================================================
+
+void AMyCharacterBase::FinishTween()
+{
+	bTweenActive = false;
+
+	// Parallel-transport the camera orbit direction from the old surface normal to
+	// the new one.  This keeps the player's sense of screen direction consistent
+	// across face seams: whatever felt like "right" before the step still feels
+	// like "right" after it.
+	if (!CamFollowDir.IsNearlyZero()
+	    && !TweenFromNormal.IsNearlyZero()
+	    && !TweenToNormal.IsNearlyZero())
+	{
+		const FQuat   Arc         = FQuat::FindBetweenNormals(TweenFromNormal, TweenToNormal);
+		const FVector Transported = FVector::VectorPlaneProject(
+		                                Arc.RotateVector(CamFollowDir),
+		                                TweenToNormal).GetSafeNormal();
+		if (!Transported.IsNearlyZero())
+			CamFollowDir = Transported;
+	}
+
+	SnapToCurrentCell(); // Face/X/Y already point to the new cell
+
+	if (bAutoLogCurrentMazeFace) DumpCurrentMazeFaceAscii();
+
+	if (bMoveQueued)
+	{
+		bMoveQueued = false;
+		TryMove(QueuedDir);
+	}
+}
+
+// =============================================================================
+// SnapToCurrentCell
+// =============================================================================
+
+void AMyCharacterBase::SnapToCurrentCell()
+{
+	if (!Sphere) return;
+
+	SetActorLocation(GetCharStandPos(Face, X, Y));
+
+	// Preserve character forward, but re-align Up to the new surface normal.
+	const FVector SurfNormal = (GetCellSurfacePos(Face, X, Y) - GetSphereCenter()).GetSafeNormal();
+	FVector CharFwd = FVector::VectorPlaneProject(GetActorQuat().GetAxisX(), SurfNormal).GetSafeNormal();
+
+	if (CharFwd.IsNearlyZero())
+	{
+		// No valid facing yet — use world forward as a seed.
+		CharFwd = FVector::VectorPlaneProject(FVector::ForwardVector, SurfNormal).GetSafeNormal();
+	}
+
+	if (!CharFwd.IsNearlyZero())
+	{
+		SetActorRotation(FRotationMatrix::MakeFromXZ(CharFwd, SurfNormal).ToQuat());
+	}
+}
+
+// =============================================================================
+// ResolveDir
 // =============================================================================
 //
-// Given a desired world-space tangent direction (e.g. "screen up"), find which
-// of the four maze directions (N/E/S/W) has its 3D neighbour cell in the most
-// similar direction.
-//
-// This is robust on all six faces including the poles because:
-//   1. It uses Maze->GetNeighborCell to get all four neighbours, which already
-//      handles face transitions internally.
-//   2. It uses Sphere->GetCellCenterWorld to get their 3D positions — pure world
-//      geometry, independent of face-local coordinate frames.
-//   3. It never touches 2D face coordinates for direction resolution.
+// Given a world-space direction on the tangent plane, return the maze direction
+// (N/E/S/W) whose 3D neighbour cell lies closest to that direction.
+// Uses actual cell world positions — no face-local rotation tables — so it works
+// identically on all 6 faces including the poles.
 
-EMazeDir AMyCharacterBase::ResolveMazeDirectionFromWorldVector(const FVector& DesiredWorldDir) const
+EMazeDir AMyCharacterBase::ResolveDir(const FVector& WorldDir) const
 {
 	if (!Sphere || !Maze) return EMazeDir::N;
 
-	const FVector SurfNormal = GetCurrentCellSurfaceNormal();
-	if (SurfNormal.IsNearlyZero()) return EMazeDir::N;
+	const FVector CellCenter = GetCellSurfacePos(Face, X, Y);
+	const FVector SurfNormal = (CellCenter - GetSphereCenter()).GetSafeNormal();
 
-	// Project the desired direction onto the tangent plane so we compare apples
-	// to apples when we dot-product against neighbour directions below.
-	const FVector DesiredTangent = FVector::VectorPlaneProject(DesiredWorldDir, SurfNormal).GetSafeNormal();
-	if (DesiredTangent.IsNearlyZero()) return EMazeDir::N;
+	// Project input direction onto the tangent plane.
+	const FVector TangDir = FVector::VectorPlaneProject(WorldDir, SurfNormal).GetSafeNormal();
+	if (TangDir.IsNearlyZero()) return EMazeDir::N;
 
-	const FVector CurrentCenter = Sphere->GetCellCenterWorld(Face, X, Y);
-	const FMazeNode CurrentNode(Face, X, Y);
-
-	EMazeDir BestDir  = EMazeDir::N;
-	float    BestDot  = -FLT_MAX;
+	float    BestDot = -2.f;
+	EMazeDir BestDir = EMazeDir::N;
 
 	for (EMazeDir Dir : { EMazeDir::N, EMazeDir::E, EMazeDir::S, EMazeDir::W })
 	{
-		// GetNeighborCell with bIgnoreWalls=true: we want ALL four neighbours for
-		// direction resolution, not just the open ones.  Wall filtering happens in
-		// TryMoveInMazeDirection via IsOpen — not here.
-		const FMazeNode Neighbour = Maze->GetNeighborCell(CurrentNode, Dir, /*bIgnoreWalls=*/true);
-		if (!Maze->IsValid(Neighbour.Face, Neighbour.X, Neighbour.Y)) continue;
+		const FMazeNode Neighbor = Maze->GetNeighborCell(FMazeNode(Face, X, Y), Dir, true);
+		if (!Maze->IsValid(Neighbor.Face, Neighbor.X, Neighbor.Y)) continue;
 
-		const FVector NeighbourCenter = Sphere->GetCellCenterWorld(
-			Neighbour.Face, Neighbour.X, Neighbour.Y);
+		const FVector NeighborPos = GetCellSurfacePos(Neighbor.Face, Neighbor.X, Neighbor.Y);
+		const FVector ToNeighbor  = (NeighborPos - CellCenter).GetSafeNormal();
 
-		// Direction from current cell to this neighbour, projected onto tangent plane.
-		const FVector CandidateDir = FVector::VectorPlaneProject(
-			NeighbourCenter - CurrentCenter, SurfNormal).GetSafeNormal();
-
-		if (CandidateDir.IsNearlyZero()) continue;
-
-		const float Dot = FVector::DotProduct(DesiredTangent, CandidateDir);
+		const float Dot = FVector::DotProduct(TangDir, ToNeighbor);
 		if (Dot > BestDot)
 		{
-			BestDot  = Dot;
-			BestDir  = Dir;
+			BestDot = Dot;
+			BestDir = Dir;
 		}
 	}
 
@@ -630,539 +539,183 @@ bool AMyCharacterBase::IsOpen(const FMazeCell& Cell, EMazeDir Dir) const
 }
 
 // =============================================================================
-// TryMoveInMazeDirection
+// Sphere helpers
 // =============================================================================
 
-bool AMyCharacterBase::TryMoveInMazeDirection(EMazeDir Dir)
+FVector AMyCharacterBase::GetSphereCenter() const
 {
-	if (!Sphere || !Maze)                       return false;
-	if (bMoveTweenActive)                       return false;
+	// Use Orchestrator location — the fixed rotation pivot.
+	// Sphere (child actor) drifts when the Orchestrator rotates.
+	if (Orchestrator) return Orchestrator->GetActorLocation();
+	if (Sphere)       return Sphere->GetActorLocation();
+	return FVector::ZeroVector;
+}
 
-	const FMazeCell& Cell = Maze->GetCell(Face, X, Y);
+FVector AMyCharacterBase::GetCellSurfacePos(int32 InFace, int32 InX, int32 InY) const
+{
+	if (Sphere) return Sphere->GetCellCenterWorld(InFace, InX, InY);
+	return FVector::ZeroVector;
+}
 
-	if (!IsOpen(Cell, Dir))
-	{
-		UE_LOG(LogTemp, Verbose, TEXT("MyChar: wall blocks %s from Face%d (%d,%d)"),
-			DirName(Dir), Face, X, Y);
-		return false;
-	}
-
-	const int32 CPF = FMath::Max(1, Maze->CellsPerFace);
-	int32 NewFace = Face, NewX = X, NewY = Y;
-
-	// Step within the same face first.
-	switch (Dir)
-	{
-	case EMazeDir::N: --NewY; break;
-	case EMazeDir::E: ++NewX; break;
-	case EMazeDir::S: ++NewY; break;
-	case EMazeDir::W: --NewX; break;
-	}
-
-	// If out of bounds, resolve the face transition using the existing seam table.
-	if (NewX < 0 || NewX >= CPF || NewY < 0 || NewY >= CPF)
-	{
-		FMazeNode SeamNode;
-		if (!Maze->TryFaceTransition(FMazeNode(Face, X, Y), Dir, SeamNode))
-		{
-			UE_LOG(LogTemp, Warning, TEXT("MyChar: TryFaceTransition failed for Dir=%s"), DirName(Dir));
-			return false;
-		}
-		NewFace = SeamNode.Face;
-		NewX    = SeamNode.X;
-		NewY    = SeamNode.Y;
-	}
-
-	const int32 OldFace = Face, OldX = X, OldY = Y;
-	Face = NewFace; X = NewX; Y = NewY;
-
-	StartMoveTween(OldFace, OldX, OldY, Face, X, Y);
-
-	UE_LOG(LogTemp, Verbose, TEXT("MyChar: move %s → Face%d (%d,%d)"),
-		DirName(Dir), Face, X, Y);
-
-	if (bAutoLogCurrentMazeFace) DumpCurrentMazeFaceAscii();
-
-	return true;
+FVector AMyCharacterBase::GetCharStandPos(int32 InFace, int32 InX, int32 InY) const
+{
+	const FVector SurfPos   = GetCellSurfacePos(InFace, InX, InY);
+	const FVector SphCenter = GetSphereCenter();
+	const FVector Normal    = (SurfPos - SphCenter).GetSafeNormal();
+	return SurfPos + Normal * StepHeightOffset;
 }
 
 // =============================================================================
-// StartMoveTween
+// UpdateCamera
 // =============================================================================
 //
-// Prepares all state for a smooth spherical arc tween from the old cell to the
-// new cell.  The actual per-frame interpolation happens in UpdateMoveTween.
-
-void AMyCharacterBase::StartMoveTween(
-	int32 OldFace, int32 OldX, int32 OldY,
-	int32 NewFace, int32 NewX, int32 NewY)
-{
-	// Safety: CharFixedWorldPos must be initialised before any tween can run.
-	// RefreshAfterMazeRebuild → SnapCharacterToCurrentCell normally guarantees
-	// this, but guard here in case of an unusual call order.
-	if (!bCharFixedPosInit)
-	{
-		SnapCharacterToCurrentCell();
-		if (!bCharFixedPosInit) return; // Sphere not ready — abort silently
-	}
-
-	TweenSphereCenter = GetBasisSphereCenterWorld();
-
-	// World-space cell centres at the START of this tween (sphere has not moved yet).
-	const FVector FromCell = Sphere->GetCellCenterWorld(OldFace, OldX, OldY);
-	const FVector ToCell   = Sphere->GetCellCenterWorld(NewFace, NewX, NewY);
-
-	const FVector FromNormal = (FromCell - TweenSphereCenter).GetSafeNormal();
-	const FVector ToNormal   = (ToCell   - TweenSphereCenter).GetSafeNormal();
-
-	// -------------------------------------------------------------------------
-	// SPHERE ROTATION SETUP
-	//
-	// Goal: rotate the sphere so that the TARGET cell (ToCell) arrives at
-	// CharFixedWorldPos — the fixed world point where the character stands.
-	//
-	// CharFixedWorldPos lies along the radial direction CharUp from the sphere
-	// centre.  We need the sphere to rotate until ToNormal aligns with CharUp.
-	//
-	// The rotation is applied in WORLD space, so:
-	//   TweenTargetSphereRot = WorldAlignRot * TweenStartSphereRot
-	//
-	// where WorldAlignRot = FindBetweenNormals(ToNormal, CharUp) — the minimum
-	// world-space rotation that swings ToNormal onto CharUp.
-	//
-	// Proof:
-	//   After applying TweenTargetSphereRot to sphere-local ToNormal_local:
-	//   TweenTargetSphereRot * ToNormal_local
-	//   = (WorldAlignRot * TweenStartSphereRot) * ToNormal_local
-	//   = WorldAlignRot * (TweenStartSphereRot * ToNormal_local)
-	//   = WorldAlignRot * ToNormal   [since sphere is at TweenStartSphereRot]
-	//   = CharUp                     [by definition of WorldAlignRot]  ✓
-	// -------------------------------------------------------------------------
-	// Rotate the ORCHESTRATOR (not just the sphere child) so that WallHISM
-	// and all other components attached to it move together with the geometry.
-	TweenStartSphereRot  = Orchestrator->GetActorQuat();
-
-	// CharUp: the fixed outward direction from sphere centre to CharFixedWorldPos.
-	// (Initialised in SnapCharacterToCurrentCell on first use.)
-	const FVector CharUp = (CharFixedWorldPos - TweenSphereCenter).GetSafeNormal();
-
-	// Rotation in world space that swings the target-cell direction onto CharUp.
-	const FQuat WorldAlignRot   = FQuat::FindBetweenNormals(ToNormal, CharUp);
-	TweenTargetSphereRot        = WorldAlignRot * TweenStartSphereRot;
-
-	// -------------------------------------------------------------------------
-	// Character rotation at start and end of the tween.
-	//
-	// We want the character to smoothly turn to face the direction they are
-	// walking.  The movement direction (in world space) is approximated by the
-	// vector from the old cell centre to the new cell centre, then projected
-	// onto the start/end tangent planes.
-	//
-	// MakeFromXZ(X, Z): X = local forward (where character faces), Z = local up (surface normal).
-	// -------------------------------------------------------------------------
-	const FVector MoveApprox = (ToCell - FromCell).GetSafeNormal(); // approx move direction
-
-	const FVector StartFacingDir = FVector::VectorPlaneProject(MoveApprox, FromNormal).GetSafeNormal();
-	const FVector EndFacingDir   = FVector::VectorPlaneProject(MoveApprox, ToNormal  ).GetSafeNormal();
-
-	// If the movement vector is degenerate (cells are on top of each other, shouldn't
-	// happen), fall back to the face-local North direction.
-	FVector StartFwd = StartFacingDir;
-	FVector EndFwd   = EndFacingDir;
-
-	if (StartFwd.IsNearlyZero())
-	{
-		FVector TmpFwd, TmpRight, TmpUp;
-		if (GetSphereAlignedBasisForCell(OldFace, OldX, OldY, TmpFwd, TmpRight, TmpUp))
-			StartFwd = TmpFwd;
-	}
-	if (EndFwd.IsNearlyZero())
-	{
-		FVector TmpFwd, TmpRight, TmpUp;
-		if (GetSphereAlignedBasisForCell(NewFace, NewX, NewY, TmpFwd, TmpRight, TmpUp))
-			EndFwd = TmpFwd;
-	}
-
-	// -------------------------------------------------------------------------
-	// CHARACTER ROTATION SETUP
-	//
-	// The character always stands at CharFixedWorldPos, so its "up" is the
-	// fixed CharUp direction.  We only need to rotate it around that axis to
-	// face the movement direction.
-	//
-	// TweenFromRot  = current actual rotation (so chained turns are seamless).
-	// TweenToRot    = face EndFwd, upright on CharUp.
-	//                 Recomputed each frame in UpdateMoveTween as the sphere
-	//                 rolls, so the target tracks the maze geometry correctly.
-	//
-	// TweenLocalMoveDir = EndFwd converted to sphere-LOCAL space.
-	//   Each frame: WorldFacing = CurrentSphereRot * TweenLocalMoveDir
-	//   This automatically updates the target facing as the sphere rolls,
-	//   making the character appear to turn relative to the maze surface.
-	// -------------------------------------------------------------------------
-	TweenFromRot = GetActorQuat();
-
-	// EndFwd is world-space at TweenStartSphereRot; project onto CharUp plane.
-	const FVector EndFacingOnCharPlane =
-		FVector::VectorPlaneProject(EndFwd, CharUp).GetSafeNormal();
-	const FVector InitialFacing = EndFacingOnCharPlane.IsNearlyZero() ? EndFwd : EndFacingOnCharPlane;
-	TweenToRot = FRotationMatrix::MakeFromXZ(InitialFacing, CharUp).ToQuat();
-
-	// Store movement direction in sphere-local space.
-	TweenLocalMoveDir = TweenStartSphereRot.Inverse().RotateVector(EndFwd);
-
-	RotTweenElapsed = 0.f;
-
-	// CameraUpHint: same guard as before (only update when moving forward-ish).
-	if (!StartFacingDir.IsNearlyZero())
-	{
-		const bool  HintEmpty  = CameraUpHint.IsNearlyZero();
-		const float DotWithUp  = FVector::DotProduct(StartFacingDir, CameraUpHint);
-		if (HintEmpty || DotWithUp >= 0.f)
-			CameraUpHint = StartFacingDir;
-	}
-
-	MoveTweenAlpha   = 0.f;
-	bMoveTweenActive = true;
-}
-
-// =============================================================================
-// UpdateMoveTween  —  Spherical arc interpolation
-// =============================================================================
+// DESIGN
+// ------
+// The camera sits behind and above the character in a classic third-person arc.
 //
-// MATH OVERVIEW
-// -------------
-// Both cell positions (TweenFromCellCenter, TweenToCellCenter) lie on a sphere
-// centred at TweenSphereCenter.  A straight lerp between them would arc inward
-// through the sphere.  Instead we interpolate along the great-circle arc
-// (the shortest path on the sphere surface) using quaternion slerp.
-//
-// Given:
-//   O  = TweenSphereCenter
-//   A  = TweenFromCellCenter - O   (vector from sphere centre to start point)
-//   B  = TweenToCellCenter   - O   (vector from sphere centre to end point)
-//   A_dir = normalize(A),  B_dir = normalize(B)
-//
-// The quaternion Q rotates A_dir onto B_dir (it is the minimum rotation between
-// the two radial directions, i.e., the great-circle arc rotation).
-//
-// At time t ∈ [0,1]:
-//   curr_dir = slerp(Identity, Q, t)  *  A_dir
-//   curr_R   = lerp(|A|, |B|, t)       // handles small height differences
-//   curr_pos = O + curr_dir * curr_R
-//
-// This guarantees the character glides along the sphere surface, never
-// dipping below it or floating off it.
+// Position lag    — FMath::VInterpTo smooths the world position each frame.
+// Rotation lag    — FQuat::Slerp with a short-arc guard prevents flipping.
+// Screen-up       — Surface normal projected perpendicular to the look direction.
+//                   This eliminates roll at the poles without any special cases.
 
-void AMyCharacterBase::UpdateMoveTween(float DeltaSeconds)
-{
-	if (!bMoveTweenActive) return;
-
-	// -------------------------------------------------------------------------
-	// SPHERE ROTATION  —  driven by StepTweenDuration
-	//
-	// The character stays at CharFixedWorldPos.  The sphere rotates so the
-	// next cell arrives at that fixed point.  Slerping the sphere quaternion
-	// gives a smooth "ball rolling" effect in all directions.
-	// -------------------------------------------------------------------------
-	MoveTweenAlpha += DeltaSeconds / FMath::Max(0.001f, StepTweenDuration);
-	const float Alpha       = FMath::Clamp(MoveTweenAlpha, 0.f, 1.f);
-	const float SmoothAlpha = FMath::InterpEaseInOut(0.f, 1.f, Alpha, 2.f);
-
-	if (Orchestrator)
-	{
-		const FQuat NewSphereRot = FQuat::Slerp(TweenStartSphereRot, TweenTargetSphereRot, SmoothAlpha);
-		Orchestrator->SetActorRotation(NewSphereRot);
-
-		// -------------------------------------------------------------------------
-		// CHARACTER ROTATION  —  driven by CharacterTurnSpeed °/s
-		//
-		// TweenToRot is recomputed each frame from TweenLocalMoveDir (sphere-local
-		// movement direction) rotated by the sphere's CURRENT world rotation.
-		// This makes the character face the movement direction relative to the maze
-		// geometry below, which rotates naturally as the sphere rolls.
-		//
-		// Because the sphere rolls under the character, the world-space "facing
-		// direction" changes continuously during the tween.  Tracking it live
-		// means the character always ends up facing exactly the right direction
-		// rather than overshooting due to the sphere having moved.
-		// -------------------------------------------------------------------------
-		if (!TweenLocalMoveDir.IsNearlyZero())
-		{
-			const FVector CharUp       = (CharFixedWorldPos - TweenSphereCenter).GetSafeNormal();
-			const FVector WorldFacing  = NewSphereRot.RotateVector(TweenLocalMoveDir);
-			const FVector TangentFacing = FVector::VectorPlaneProject(WorldFacing, CharUp).GetSafeNormal();
-			if (!TangentFacing.IsNearlyZero())
-				TweenToRot = FRotationMatrix::MakeFromXZ(TangentFacing, CharUp).ToQuat();
-		}
-	}
-
-	RotTweenElapsed += DeltaSeconds;
-	const float TotalAngleRad = TweenFromRot.AngularDistance(TweenToRot);
-
-	float RotAlpha;
-	if (TotalAngleRad < KINDA_SMALL_NUMBER)
-	{
-		RotAlpha = 1.f;
-	}
-	else
-	{
-		const float TurnDuration = TotalAngleRad
-		                           / FMath::DegreesToRadians(FMath::Max(1.f, CharacterTurnSpeed));
-		RotAlpha = FMath::Clamp(RotTweenElapsed / TurnDuration, 0.f, 1.f);
-		RotAlpha = FMath::InterpEaseInOut(0.f, 1.f, RotAlpha, 2.f);
-	}
-
-	const FQuat AlignedToRot = ((TweenFromRot | TweenToRot) >= 0.f)
-	                            ? TweenToRot
-	                            : FQuat(-TweenToRot.X, -TweenToRot.Y,
-	                                    -TweenToRot.Z, -TweenToRot.W);
-	const FQuat NewCharRot = FQuat::Slerp(TweenFromRot, AlignedToRot, RotAlpha);
-
-	// Character position is always the fixed world point.
-	SetActorLocationAndRotation(CharFixedWorldPos, NewCharRot,
-	                            false, nullptr, ETeleportType::TeleportPhysics);
-
-	if (Alpha >= 1.f)
-	{
-		bMoveTweenActive = false;
-
-		// Snap sphere to exact target (kills floating-point drift).
-		if (Orchestrator) Orchestrator->SetActorRotation(TweenTargetSphereRot);
-
-		// Character stays at the fixed point; only preserve rotation.
-		SetActorLocation(CharFixedWorldPos, false, nullptr, ETeleportType::TeleportPhysics);
-
-		// Update camera hint with the final world-space movement direction.
-		if (Sphere && !TweenLocalMoveDir.IsNearlyZero())
-		{
-			const FVector CharUp       = (CharFixedWorldPos - TweenSphereCenter).GetSafeNormal();
-			const FVector FinalFacing  = FVector::VectorPlaneProject(
-			                                TweenTargetSphereRot.RotateVector(TweenLocalMoveDir),
-			                                CharUp).GetSafeNormal();
-			if (!FinalFacing.IsNearlyZero())
-			{
-				const bool  HintEmpty = CameraUpHint.IsNearlyZero();
-				const float DotWithUp = FVector::DotProduct(FinalFacing, CameraUpHint);
-				if (HintEmpty || DotWithUp >= 0.f)
-					CameraUpHint = FinalFacing;
-			}
-		}
-
-		if (bMoveQueued)
-		{
-			bMoveQueued = false;
-			TryMoveInMazeDirection(QueuedDir);
-		}
-	}
-}
-
-// =============================================================================
-// BuildPlacedWorldTransformForCell
-// =============================================================================
-
-FTransform AMyCharacterBase::BuildPlacedWorldTransformForCell(
-	int32 InFace, int32 InX, int32 InY) const
-{
-	if (!Sphere) return FTransform(GetActorRotation(), GetActorLocation());
-
-	const FVector CellCenter   = Sphere->GetCellCenterWorld(InFace, InX, InY);
-	const FVector SphereCenter = GetBasisSphereCenterWorld();
-	const FVector OutUp        = (CellCenter - SphereCenter).GetSafeNormal();
-
-	if (OutUp.IsNearlyZero()) return FTransform(FRotator::ZeroRotator, CellCenter);
-
-	const float HalfHeight = CapsuleComp ? CapsuleComp->GetScaledCapsuleHalfHeight() : 88.f;
-	const FVector NewPos   = CellCenter + OutUp * (HalfHeight + 2.f + StepHeightOffset);
-
-	FVector Fwd, Right, Up;
-	if (!GetSphereAlignedBasisForCell(InFace, InX, InY, Fwd, Right, Up))
-	{
-		return FTransform(FRotator::ZeroRotator, NewPos);
-	}
-
-	// Character faces "screen up" (CameraUpHint) when standing still.
-	// If the hint is set, use it for the forward direction.
-	FVector FacingFwd = Fwd;
-	if (!CameraUpHint.IsNearlyZero())
-	{
-		const FVector HintTangent = FVector::VectorPlaneProject(CameraUpHint, Up).GetSafeNormal();
-		if (!HintTangent.IsNearlyZero()) FacingFwd = HintTangent;
-	}
-
-	const FRotator NewRot = FRotationMatrix::MakeFromXZ(FacingFwd, Up).Rotator();
-	return FTransform(NewRot, NewPos);
-}
-
-// =============================================================================
-// SnapCharacterToCurrentCell
-// =============================================================================
-
-void AMyCharacterBase::SnapCharacterToCurrentCell()
+void AMyCharacterBase::UpdateCamera(float DeltaSeconds)
 {
 	if (!Sphere) return;
 
-	if (!bCharFixedPosInit)
+	const FVector CharPos   = GetActorLocation();
+	const FVector SphCenter = GetSphereCenter();
+	const FVector SurfNorm  = (CharPos - SphCenter).GetSafeNormal();
+
+	// ---- Target position: behind and above character ----
+	const float PitchRad  = FMath::DegreesToRadians(FMath::Clamp(CameraPitchAngle, 0.f, 89.f));
+	const float HorizDist = CameraArmLength * FMath::Cos(PitchRad);
+	const float VertDist  = CameraArmLength * FMath::Sin(PitchRad);
+
+	// Camera offset uses a direction fixed at spawn (CamFollowDir) — never updated
+	// during play.  The camera stays at the same orbit angle regardless of which
+	// direction the character walks, eliminating all mid-game spinning.
+	FVector FollowDir = FVector::VectorPlaneProject(CamFollowDir, SurfNorm).GetSafeNormal();
+	if (FollowDir.IsNearlyZero())
+		FollowDir = FVector::VectorPlaneProject(FVector::ForwardVector, SurfNorm).GetSafeNormal();
+
+	const FVector TargetCamPos  = CharPos - FollowDir * HorizDist + SurfNorm * VertDist;
+	const FVector LookTarget    = CharPos + SurfNorm * CameraLookAtHeight;
+
+	// ---- Target orientation ----
+	const FVector CamFwd = (LookTarget - TargetCamPos).GetSafeNormal();
+
+	// Screen-up: surface normal projected perpendicular to the look direction.
+	FVector DesiredUp = FVector::VectorPlaneProject(SurfNorm, CamFwd).GetSafeNormal();
+	if (DesiredUp.IsNearlyZero())
+		DesiredUp = FVector::VectorPlaneProject(FVector::UpVector, CamFwd).GetSafeNormal();
+
+	const FQuat TargetQuat = FRotationMatrix::MakeFromXZ(CamFwd, DesiredUp).ToQuat();
+
+	// ---- Snap on first frame, interpolate afterwards ----
+	if (!bCamInit)
 	{
-		// -----------------------------------------------------------------------
-		// First call (spawn / rebuild): establish CharFixedWorldPos from the
-		// current cell's world position.  Everything else follows from here.
-		//
-		// The sphere is NOT moved — its current orientation defines where
-		// cell (Face, X, Y) sits in the world, and that world position becomes
-		// the permanent anchor point for the character.
-		// -----------------------------------------------------------------------
-		const FVector CellWorld = Sphere->GetCellCenterWorld(Face, X, Y);
-		const FVector SphCenter = GetBasisSphereCenterWorld();
-		const FVector Normal    = (CellWorld - SphCenter).GetSafeNormal();
-		const float   HalfH     = CapsuleComp ? CapsuleComp->GetScaledCapsuleHalfHeight() : 88.f;
-
-		CharFixedWorldPos      = CellWorld + Normal * (HalfH + 2.f + StepHeightOffset);
-		TweenTargetSphereRot   = Orchestrator->GetActorQuat(); // current rot is already correct
-		bCharFixedPosInit      = true;
-
-		// Place character and set initial facing from BuildPlacedWorldTransformForCell.
-		const FTransform T = BuildPlacedWorldTransformForCell(Face, X, Y);
-		SetActorLocationAndRotation(CharFixedWorldPos, T.GetRotation(),
-		                            false, nullptr, ETeleportType::TeleportPhysics);
+		CamWorldPos = TargetCamPos;
+		CamQuat     = TargetQuat;
+		bCamInit    = true;
 		return;
 	}
 
-	// Subsequent calls (end of tween / teleport): snap sphere to the exact
-	// target rotation and keep character at the fixed world point.
-	// Character rotation is left untouched (the turn system owns it).
-	Orchestrator->SetActorRotation(TweenTargetSphereRot);
-	SetActorLocation(CharFixedWorldPos, false, nullptr, ETeleportType::TeleportPhysics);
+	// Smooth position.
+	CamWorldPos = FMath::VInterpTo(CamWorldPos, TargetCamPos, DeltaSeconds, CameraPositionLag);
+
+	// Short-arc guard: negate TargetQuat if it is on the far hemisphere.
+	const FQuat AlignedTarget = ((CamQuat | TargetQuat) >= 0.f)
+	                            ? TargetQuat
+	                            : FQuat(-TargetQuat.X, -TargetQuat.Y,
+	                                    -TargetQuat.Z, -TargetQuat.W);
+
+	const float RotAlpha = FMath::Clamp(DeltaSeconds * CameraRotationLag, 0.f, 1.f);
+	CamQuat = FQuat::Slerp(CamQuat, AlignedTarget, RotAlpha);
+	CamQuat.Normalize();
 }
 
 // =============================================================================
-// PlaceOnCell  (Blueprint-callable teleport)
+// FindClosestCell
 // =============================================================================
 
-FTransform AMyCharacterBase::PlaceOnCell(int32 InFace, int32 InX, int32 InY)
-{
-	bMoveTweenActive = false;
-	MoveTweenAlpha   = 0.f;
-	bMoveQueued      = false;
-
-	Face = InFace; X = InX; Y = InY;
-
-	const FTransform T = BuildPlacedWorldTransformForCell(Face, X, Y);
-	SetActorLocationAndRotation(
-		T.GetLocation(), T.Rotator(),
-		false, nullptr, ETeleportType::TeleportPhysics);
-
-	// Re-init the camera hint for the new cell.
-	FVector Fwd, Right, Up;
-	if (GetSphereAlignedBasisForCell(Face, X, Y, Fwd, Right, Up)) CameraUpHint = Fwd;
-
-	DrawCellBasisDebug(Face, X, Y, 150.f, 10.f);
-	return T;
-}
-
-// =============================================================================
-// FindClosestMazeCellToWorldLocation
-// =============================================================================
-
-bool AMyCharacterBase::FindClosestMazeCellToWorldLocation(
+bool AMyCharacterBase::FindClosestCell(
 	const FVector& WorldPos, int32& OutFace, int32& OutX, int32& OutY) const
 {
-	if (!Sphere) return false;
+	if (!Sphere || !Maze) return false;
 
-	const int32 CPF    = Sphere->GetCellsPerFace();
-	float       BestD2 = TNumericLimits<float>::Max();
+	float BestDistSq = FLT_MAX;
+	bool  bFound     = false;
+	const int32 CPF  = Maze->CellsPerFace;
 
 	for (int32 F = 0; F < 6; ++F)
 	{
-		for (int32 CY = 0; CY < CPF; ++CY)
+		for (int32 CX = 0; CX < CPF; ++CX)
 		{
-			for (int32 CX = 0; CX < CPF; ++CX)
+			for (int32 CY = 0; CY < CPF; ++CY)
 			{
-				const float D2 = FVector::DistSquared(
-					Sphere->GetCellCenterWorld(F, CX, CY), WorldPos);
-				if (D2 < BestD2)
+				const float DistSq = FVector::DistSquared(WorldPos,
+				                     Sphere->GetCellCenterWorld(F, CX, CY));
+				if (DistSq < BestDistSq)
 				{
-					BestD2   = D2;
-					OutFace  = F;
-					OutX     = CX;
-					OutY     = CY;
+					BestDistSq = DistSq;
+					OutFace = F; OutX = CX; OutY = CY;
+					bFound = true;
 				}
 			}
 		}
 	}
-	return true;
+
+	return bFound;
 }
 
 // =============================================================================
-// Debug / ASCII dump
+// Debug dump helpers
 // =============================================================================
 
-void AMyCharacterBase::DumpCurrentMazeFaceAscii() const { DumpMazeFaceAscii(Face); }
-void AMyCharacterBase::DumpAllMazeFacesAscii()    const { for (int32 F = 0; F < 6; ++F) DumpMazeFaceAscii(F); }
+void AMyCharacterBase::DumpCurrentMazeFaceAscii() const
+{
+	DumpMazeFaceAscii(Face);
+}
 
 void AMyCharacterBase::DumpMazeFaceAscii(int32 FaceToDump) const
 {
-	if (!Maze || !Maze->IsValid(FaceToDump, 0, 0))
-	{
-		UE_LOG(LogTemp, Warning, TEXT("DumpMazeFace: Face %d invalid"), FaceToDump);
-		return;
-	}
+	if (!Maze) return;
 
-	const int32 CPF = FMath::Max(1, Maze->CellsPerFace);
-	UE_LOG(LogTemp, Warning, TEXT("FACE %d  (player at Face=%d X=%d Y=%d)"), FaceToDump, Face, X, Y);
+	const int32 CPF = Maze->CellsPerFace;
+	UE_LOG(LogTemp, Log, TEXT("=== Face %d ==="), FaceToDump);
 
-	for (int32 CY = 0; CY < CPF; ++CY)
+	for (int32 Row = 0; Row < CPF; ++Row)
 	{
-		FString TopLine;
-		for (int32 CX = 0; CX < CPF; ++CX)
+		FString Line;
+		for (int32 Col = 0; Col < CPF; ++Col)
 		{
-			TopLine += TEXT("+");
-			TopLine += Maze->GetCell(FaceToDump, CX, CY).OpenN ? TEXT("   ") : TEXT("---");
-		}
-		TopLine += TEXT("+");
-		UE_LOG(LogTemp, Warning, TEXT("%s"), *TopLine);
+			const FMazeCell& Cell = Maze->GetCell(FaceToDump, Col, Row);
 
-		FString CellLine;
-		for (int32 CX = 0; CX < CPF; ++CX)
+			bool bPlayer = (FaceToDump == Face && Col == X && Row == Y);
+			TCHAR Ch = bPlayer ? TEXT('@') : TEXT('.');
+
+			if (!Cell.OpenN) Ch = (bPlayer ? TEXT('@') : TEXT('#'));
+			Line.AppendChar(Ch);
+			Line.AppendChar(Cell.OpenE ? TEXT(' ') : TEXT('|'));
+		}
+		UE_LOG(LogTemp, Log, TEXT("%s"), *Line);
+
+		// Draw South walls for this row.
+		FString WallLine;
+		for (int32 Col = 0; Col < CPF; ++Col)
 		{
-			CellLine += Maze->GetCell(FaceToDump, CX, CY).OpenW ? TEXT(" ") : TEXT("|");
-			const bool bHere = (FaceToDump == Face && CX == X && CY == Y);
-			CellLine += bHere ? TEXT(" P ") : TEXT("   ");
+			const FMazeCell& Cell = Maze->GetCell(FaceToDump, Col, Row);
+			WallLine.AppendChar(Cell.OpenS ? TEXT(' ') : TEXT('-'));
+			WallLine.AppendChar(TEXT(' '));
 		}
-		const FMazeCell& LastCell = Maze->GetCell(FaceToDump, CPF - 1, CY);
-		CellLine += LastCell.OpenE ? TEXT(" ") : TEXT("|");
-		UE_LOG(LogTemp, Warning, TEXT("%s"), *CellLine);
+		UE_LOG(LogTemp, Log, TEXT("%s"), *WallLine);
 	}
-
-	FString BottomLine;
-	const int32 LastRow = CPF - 1;
-	for (int32 CX = 0; CX < CPF; ++CX)
-	{
-		BottomLine += TEXT("+");
-		BottomLine += Maze->GetCell(FaceToDump, CX, LastRow).OpenS ? TEXT("   ") : TEXT("---");
-	}
-	BottomLine += TEXT("+");
-	UE_LOG(LogTemp, Warning, TEXT("%s"), *BottomLine);
-	UE_LOG(LogTemp, Warning, TEXT("END FACE %d"), FaceToDump);
 }
 
-// =============================================================================
-// DrawCellBasisDebug
-// =============================================================================
-
-void AMyCharacterBase::DrawCellBasisDebug(
-	int32 InFace, int32 InX, int32 InY, float Length, float Duration) const
+void AMyCharacterBase::DumpAllMazeFacesAscii() const
 {
-	if (!GetWorld() || !Sphere) return;
-
-	FVector Fwd, Right, Up;
-	if (!GetSphereAlignedBasisForCell(InFace, InX, InY, Fwd, Right, Up)) return;
-
-	const FVector CellCenter = Sphere->GetCellCenterWorld(InFace, InX, InY);
-	const FVector DrawStart  = CellCenter + Up * 20.f;
-
-	DrawDebugSphere(GetWorld(), CellCenter,             12.f,   10, FColor::Yellow, false, Duration, 0, 2.f);
-	DrawDebugLine  (GetWorld(), DrawStart, DrawStart + Fwd   * Length, FColor::Green,  false, Duration, 0, 3.f);
-	DrawDebugLine  (GetWorld(), DrawStart, DrawStart + Right * Length, FColor::Red,    false, Duration, 0, 3.f);
-	DrawDebugLine  (GetWorld(), DrawStart, DrawStart + Up    * Length, FColor::Blue,   false, Duration, 0, 3.f);
+	for (int32 F = 0; F < 6; ++F)
+	{
+		DumpMazeFaceAscii(F);
+	}
 }

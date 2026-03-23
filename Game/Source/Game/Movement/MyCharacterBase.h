@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "GameFramework/Pawn.h"
 #include "InputAction.h"
+#include "InputActionValue.h"
 #include "InputMappingContext.h"
 #include "../Maze/MazeTypes.h"
 #include "MyCharacterBase.generated.h"
@@ -15,6 +16,16 @@ class UStaticMeshComponent;
 class UCameraComponent;
 class UInputComponent;
 
+/**
+ * AMyCharacterBase
+ *
+ * Gravity Walker — the character physically travels along the sphere surface.
+ * The sphere never rotates; the character moves from cell to cell along a
+ * great-circle arc, always standing upright relative to the surface normal.
+ *
+ * Controls are camera-relative: W = camera forward, D = camera right.
+ * The third-person camera sits behind and above the character with smooth lag.
+ */
 UCLASS()
 class GAME_API AMyCharacterBase : public APawn
 {
@@ -27,17 +38,12 @@ protected:
 	virtual void BeginPlay() override;
 	virtual void Tick(float DeltaSeconds) override;
 	virtual void SetupPlayerInputComponent(UInputComponent* PlayerInputComponent) override;
-
-	// We override CalcCamera to implement a stable overhead sphere-surface camera.
-	// This completely bypasses any attached CameraComponent, giving us full control
-	// over the view matrix every frame.
 	virtual void CalcCamera(float DeltaTime, FMinimalViewInfo& OutResult) override;
 
-public:
 	// =========================================================================
 	// Public API
 	// =========================================================================
-
+public:
 	UFUNCTION(BlueprintCallable, Category = "Maze Setup")
 	void InitializeMazeReferences(AOrchestrator* InOrchestrator, ACubeToSphere* InSphere, UMaze* InMaze);
 
@@ -56,112 +62,75 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Debug")
 	void DumpAllMazeFacesAscii() const;
 
-protected:
 	// =========================================================================
 	// Internal helpers
 	// =========================================================================
-
-	// Finds Blueprint-owned components (capsule, mesh, camera).
+protected:
 	void CacheCharacterComponents();
 
-	// ---- Input handlers (bound to Enhanced Input actions) ----
-	void HandleMoveForwardInput();
-	void HandleMoveBackwardInput();
-	void HandleMoveLeftInput();
-	void HandleMoveRightInput();
+	// ---- Input ----
+	void HandleMoveInput(const FInputActionValue& Value);
+	void HandleLookInput(const FInputActionValue& Value);
 
-	// Core input path: given a desired world-space tangent direction (W/A/S/D
-	// already resolved to world space), resolve it to a maze direction and either
-	// attempt the move immediately or queue it if a tween is in progress.
-	void HandleMoveInputFromWorldDirection(const FVector& DesiredWorldDir);
+	// ---- Core movement ----
+	// Attempt a step in the given maze direction; returns false if blocked by wall.
+	bool TryMove(EMazeDir Dir);
 
-	// Returns the centre of the sphere actor in world space.
-	FVector GetBasisSphereCenterWorld() const;
+	// Begin a smooth arc tween from old cell to new cell.
+	void StartTween(int32 OldFace, int32 OldX, int32 OldY,
+	                int32 NewFace, int32 NewX, int32 NewY);
 
-	// Returns the outward surface normal at the player's current cell.
-	FVector GetCurrentCellSurfaceNormal() const;
+	// Advance the tween each tick.
+	void UpdateTween(float DeltaSeconds);
 
-	// Returns the "screen up" direction in world space.
-	// This is derived from CameraUpHint (the direction the player last moved),
-	// projected onto the current cell's tangent plane.  It is the direction
-	// that appears as "up on screen" to the player.
-	FVector GetCameraScreenUpInWorld() const;
+	// Called when tween reaches alpha=1; snaps to final position and fires queue.
+	void FinishTween();
 
-	// Given a desired world-space tangent direction, find the maze direction
-	// (N/E/S/W) whose 3D neighbour cell is closest to that direction.
-	// This works correctly on all six faces including the poles because it
-	// uses actual 3D world positions of neighbour cells, never face-local axes.
-	EMazeDir ResolveMazeDirectionFromWorldVector(const FVector& DesiredWorldDir) const;
+	// Snap character to current Face/X/Y immediately (no tween).
+	void SnapToCurrentCell();
 
-	// Wall check via maze cell flags.
+	// ---- Direction resolution ----
+	// Given a world-space tangent direction, return the maze direction (N/E/S/W)
+	// whose 3D neighbour cell is geometrically closest to that direction.
+	// Works correctly on every face including the poles.
+	EMazeDir ResolveDir(const FVector& WorldDir) const;
+
+	// ---- Wall check ----
 	bool IsOpen(const FMazeCell& Cell, EMazeDir Dir) const;
 
-	// Try to take one step in the given maze direction.
-	// Returns true if the move started; false if a wall blocked it.
-	bool TryMoveInMazeDirection(EMazeDir Dir);
+	// ---- Sphere helpers ----
+	// World-space pivot point of the sphere (Orchestrator actor location).
+	FVector GetSphereCenter() const;
 
-	// Immediately snap the character transform to the current (Face, X, Y) cell.
-	void SnapCharacterToCurrentCell();
+	// World-space position of a cell's surface centre (ON the sphere, not above).
+	FVector GetCellSurfacePos(int32 InFace, int32 InX, int32 InY) const;
 
-	// Brute-force search for the closest maze cell to a world position.
-	bool FindClosestMazeCellToWorldLocation(
-		const FVector& WorldPos,
-		int32& OutFace, int32& OutX, int32& OutY) const;
+	// World-space position where the character stands above a cell.
+	FVector GetCharStandPos(int32 InFace, int32 InX, int32 InY) const;
 
-	// ---- Smooth arc movement tween ----
+	// ---- Camera ----
+	// Updates CamWorldPos and CamQuat each tick (called from Tick, read by CalcCamera).
+	void UpdateCamera(float DeltaSeconds);
 
-	// Start a great-circle arc tween from OldFace/X/Y to NewFace/X/Y.
-	void StartMoveTween(
-		int32 OldFace, int32 OldX, int32 OldY,
-		int32 NewFace, int32 NewX, int32 NewY);
+	// ---- Misc ----
+	bool FindClosestCell(const FVector& WorldPos, int32& OutFace, int32& OutX, int32& OutY) const;
 
-	// Advance the active tween each Tick.
-	void UpdateMoveTween(float DeltaSeconds);
-
-	// ---- Cell transform helpers ----
-
-	// Build the full world transform the character should have when resting on
-	// the given cell (position above cell centre + rotation aligned to surface).
-	UFUNCTION(BlueprintCallable, Category = "Maze", meta = (DisplayName = "Build Character Transform For Cell"))
-	FTransform BuildPlacedWorldTransformForCell(int32 InFace, int32 InX, int32 InY) const;
-
-	// Build a right-handed, surface-aligned basis for a cell:
-	//   OutUp      = outward sphere normal (surface "up")
-	//   OutForward = face-local North (decreasing Y in grid), always derived
-	//                from actual neighbour cell positions — robust at poles.
-	//   OutRight   = face-local East (increasing X in grid)
-	UFUNCTION(BlueprintCallable, Category = "Maze", meta = (DisplayName = "Get Sphere Aligned Basis For Cell"))
-	bool GetSphereAlignedBasisForCell(
-		int32 InFace, int32 InX, int32 InY,
-		FVector& OutForward, FVector& OutRight, FVector& OutUp) const;
-
-	// Draw debug axes for a cell (green = forward, red = right, blue = up).
-	UFUNCTION(BlueprintCallable, Category = "Debug")
-	void DrawCellBasisDebug(
-		int32 InFace, int32 InX, int32 InY,
-		float Length = 150.f, float Duration = 5.f) const;
-
+	// =========================================================================
+	// Components (cached from Blueprint)
+	// =========================================================================
 protected:
-	// =========================================================================
-	// Components
-	// =========================================================================
-
 	UPROPERTY(Transient)
 	TObjectPtr<UCapsuleComponent> CapsuleComp = nullptr;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UStaticMeshComponent> PawnMeshComp = nullptr;
 
-	// The Blueprint may place a camera component on the character.
-	// CalcCamera now overrides everything, so this is cached but not actively
-	// used for the view matrix.  It can still be useful for Blueprint effects.
 	UPROPERTY(Transient)
 	TObjectPtr<UCameraComponent> CameraComp = nullptr;
 
 	// =========================================================================
 	// Runtime references
 	// =========================================================================
-
 	UPROPERTY(BlueprintReadOnly, Category = "Maze")
 	TObjectPtr<AOrchestrator> Orchestrator = nullptr;
 
@@ -172,12 +141,8 @@ protected:
 	TObjectPtr<UMaze> Maze = nullptr;
 
 	// =========================================================================
-	// Logical 2D position (the "ghost player" state)
+	// Logical cell position  (ground truth of WHERE the player is)
 	// =========================================================================
-	// These three values are the ground truth for WHERE the player IS in the
-	// maze.  Everything else (3D position, rotation, camera) is derived from
-	// them via sphere geometry.
-
 	UPROPERTY(BlueprintReadOnly, Category = "Maze")
 	int32 Face = 0;
 
@@ -188,9 +153,8 @@ protected:
 	int32 Y = 0;
 
 	// =========================================================================
-	// Tuning parameters
+	// Tuning — Movement
 	// =========================================================================
-
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Maze")
 	float StepHeightOffset = 0.f;
 
@@ -203,150 +167,87 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Maze")
 	int32 StartY = 0;
 
-	// How long (seconds) a single cell-to-cell step animation takes.
-	// 0.15 gives a snappy but smooth feel.  Increase for slower, deliberate movement.
+	// Duration of a single cell-to-cell step in seconds.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Maze|Movement")
-	float StepTweenDuration = 0.15f;
+	float StepDuration = 0.18f;
 
-	// How fast the character turns to face the movement direction, in degrees
-	// per second.  The position tween always takes StepTweenDuration regardless;
-	// rotation runs independently at this rate so a 90° turn takes
-	// 90 / CharacterTurnSpeed seconds.
-	// 360 °/s  →  90° turn in 0.25 s  (recommended starting value)
-	// 540 °/s  →  90° turn in 0.17 s  (snappier)
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Maze|Movement")
-	float CharacterTurnSpeed = 360.f;
+	// =========================================================================
+	// Tuning — Camera
+	// =========================================================================
 
-	// Distance from the character to the camera (along the sphere surface normal).
+	// Distance from the character to the camera.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Maze|Camera")
-	float CameraArmLength = 900.f;
+	float CameraArmLength = 800.f;
 
-	// Vertical field of view for the overhead camera.
+	// Elevation above the tangent plane in degrees (0 = level, 90 = straight above).
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Maze|Camera")
+	float CameraPitchAngle = 60.f;
+
+	// Height above the character's feet the camera looks at (prevents clipping).
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Maze|Camera")
+	float CameraLookAtHeight = 50.f;
+
+	// How fast the camera position catches up to the target (higher = tighter).
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Maze|Camera")
+	float CameraPositionLag = 8.f;
+
+	// How fast the camera orientation catches up (higher = snappier).
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Maze|Camera")
+	float CameraRotationLag = 10.f;
+
+	// Vertical field of view.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Maze|Camera")
 	float CameraFOV = 70.f;
 
 	// =========================================================================
-	// Input assets
+	// Tuning — Input
 	// =========================================================================
-
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input")
 	TObjectPtr<UInputMappingContext> GridInputContext = nullptr;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input")
-	TObjectPtr<UInputAction> IA_North = nullptr;
+	TObjectPtr<UInputAction> IA_Move = nullptr;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input")
-	TObjectPtr<UInputAction> IA_South = nullptr;
+	TObjectPtr<UInputAction> IA_Look = nullptr;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input")
-	TObjectPtr<UInputAction> IA_West = nullptr;
+	// Degrees of camera rotation per mouse pixel.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Maze|Camera")
+	float MouseSensitivity = 0.2f;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input")
-	TObjectPtr<UInputAction> IA_East = nullptr;
+	// Set true to invert mouse Y (camera pitches down when mouse moves up).
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Maze|Camera")
+	bool bInvertMouseY = false;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Debug")
-	bool bAutoLogCurrentMazeFace = true;
+	bool bAutoLogCurrentMazeFace = false;
 
+	// =========================================================================
+	// Private state
+	// =========================================================================
 private:
-	// =========================================================================
-	// Smooth arc tween state
-	// =========================================================================
-	// The character moves along a great-circle arc (sphere surface) rather than
-	// a straight line (which would cut through the sphere).  See StartMoveTween
-	// and UpdateMoveTween for the spherical interpolation math.
+	// ---- Arc tween ----
+	bool    bTweenActive      = false;
+	float   TweenAlpha        = 0.f;
 
-	bool  bMoveTweenActive = false;
-	float MoveTweenAlpha   = 0.f;    // 0..1 raw progress
-
-	// Rotation runs at its own speed, independent of the position tween.
-	// Seconds elapsed since the current tween started, used to drive the
-	// character turn at CharacterTurnSpeed °/s regardless of cell distance.
-	float RotTweenElapsed  = 0.f;
-
-	// =========================================================================
-	// Sphere-rolling movement
-	// =========================================================================
-	// The character stands at a FIXED world position (CharFixedWorldPos).
-	// Instead of tweening the character's position, the SPHERE rotates so the
-	// next maze cell arrives under the character.  The net effect is the maze
-	// ball rolling smoothly beneath a stationary player — centered on screen
-	// every frame, no camera chasing required.
-	//
-	// WHY this works now (but sphere-rotation failed before):
-	//   The old attempt used physics collision for walls.  Wall meshes are
-	//   attached to the sphere, so when the sphere rolled the walls moved past
-	//   the character's capsule — unreliable at curved seams.
-	//   Now walls are blocked purely by maze data (IsOpen / TryFaceTransition),
-	//   so the sphere can spin freely without any physics interaction.
-
-	// World-space position where the character always stands.
-	// Set once on first SnapCharacterToCurrentCell, then never changed.
-	FVector CharFixedWorldPos  = FVector::ZeroVector;
-	bool    bCharFixedPosInit  = false;
-
-	// Sphere rotation at the START and TARGET of the current step tween.
-	// TweenTargetSphereRot brings cell (Face,X,Y) to CharFixedWorldPos.
-	FQuat TweenStartSphereRot  = FQuat::Identity;
-	FQuat TweenTargetSphereRot = FQuat::Identity;
-
-	// Movement direction in sphere-LOCAL space, stored so we can recompute
-	// the world-space facing direction as the sphere rolls each frame.
-	FVector TweenLocalMoveDir  = FVector::ZeroVector;
-
-	// World-space cell centre positions at start and end of the tween.
-	// The character sits ABOVE these at StepHeightOffset + capsule half-height.
-	FVector TweenFromCellCenter = FVector::ZeroVector;
-	FVector TweenToCellCenter   = FVector::ZeroVector;
-
-	// Character world-space rotations at start and end of the tween.
-	// Slerped each frame so the character smoothly turns to face the next cell.
-	FQuat TweenFromRot = FQuat::Identity;
-	FQuat TweenToRot   = FQuat::Identity;
-
-	// Sphere centre cached at the moment the tween starts (the sphere does NOT
-	// move during the tween in this approach).
 	FVector TweenSphereCenter = FVector::ZeroVector;
+	FVector TweenFromNormal   = FVector::ZeroVector; // outward normal at start cell
+	FVector TweenToNormal     = FVector::ZeroVector; // outward normal at end cell
+	float   TweenRadius       = 0.f;                 // dist from sphere centre to char feet
+	FVector TweenMoveDir      = FVector::ZeroVector; // tangential direction of this step (world)
 
-	// =========================================================================
-	// Stable camera heading
-	// =========================================================================
-	// CameraUpHint is a world-space tangent vector that represents "screen up"
-	// — the direction that appears at the top of the player's screen.
-	//
-	// It is updated to the movement direction on every successful step.
-	// Because it tracks where the player JUST moved, the camera stays oriented
-	// in a way that feels natural: moving forward keeps forward at the top of
-	// the screen, turning left rotates the camera left, etc.
-	//
-	// This vector is always kept in the tangent plane of the current cell
-	// (projected in GetCameraScreenUpInWorld) so it never has a radial component.
-	//
-	// Initialized to the face-local North direction on spawn.
-	FVector CameraUpHint = FVector::ZeroVector;
+	// ---- Camera state (updated in Tick, read in CalcCamera) ----
+	FVector CamWorldPos   = FVector::ZeroVector;
+	FQuat   CamQuat       = FQuat::Identity;
+	bool    bCamInit      = false;
 
-	// =========================================================================
-	// Persistent camera quaternion  (anti-flip)
-	// =========================================================================
-	// CalcCamera builds a *desired* camera orientation each frame and slерps
-	// this quaternion toward it.  Because the output is always a small angular
-	// step from the previous frame, any mathematical discontinuity in the
-	// desired orientation (e.g. gimbal-lock at the poles) can never produce a
-	// visible snap — the slerp rate bounds how fast the camera can rotate.
-	//
-	// bCameraQuatInit starts false; on the very first CalcCamera call the
-	// quaternion is snapped directly to the desired value so there is no
-	// "swoop in" from Identity at startup.
-	FQuat CameraQuat     = FQuat::Identity;
-	bool  bCameraQuatInit = false;
+	// Last direction the character actually stepped in (world-space, tangential).
+	// Camera uses this so it never swings when A/D rotates the character in place.
+	FVector CamFollowDir  = FVector::ZeroVector;
 
-	// =========================================================================
-	// Input queue
-	// =========================================================================
-	// While a tween is playing the player can press a direction once.  The
-	// queued move fires automatically the instant the tween completes.
-	// This makes the movement feel responsive rather than requiring precise timing.
-
-	bool     bMoveQueued    = false;
-	EMazeDir QueuedDir      = EMazeDir::N;
-	FVector  QueuedWorldDir = FVector::ZeroVector; // the tangent dir that produced QueuedDir
+	// ---- Input queue ----
+	// One move may be queued while a tween is in progress. It fires the moment
+	// the tween completes, making the movement feel responsive.
+	bool     bMoveQueued = false;
+	EMazeDir QueuedDir   = EMazeDir::N;
 };
