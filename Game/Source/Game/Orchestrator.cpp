@@ -6,7 +6,7 @@
 #include "Maze/Maze.h"
 #include "DrawDebugHelpers.h"
 #include "Components/InstancedStaticMeshComponent.h"
-#include "Engine/StaticMeshActor.h" // Add this include at the top
+#include "Engine/StaticMeshActor.h"
 
 /**
  * desc : Default constructor. Creates root + wall/path instanced mesh components and sets basic collision rules.
@@ -78,13 +78,12 @@ void AOrchestrator::ResolveSphereFromChild()
 
 /**
  * desc : Full pipeline rebuild:
- *        - resolves SphereActor from child actor component
- *        - locks Resolution = CellsPerFace + 1
- *        - builds sphere surface
- *        - generates maze data
- *        - builds wall instances
- *        - initializes Navigator
- *        - runs A* debug/path visualization
+ * - resolves SphereActor from child actor component
+ * - locks Resolution = CellsPerFace + 1
+ * - builds sphere surface
+ * - generates maze data
+ * - builds wall instances
+ * - initializes Navigator
  * args : None
  * result: None
  */
@@ -136,8 +135,8 @@ static FORCEINLINE int32 CountOpenSides(const FMazeCell &C)
 /**
  * desc : Checks if a given cell meets spawn requirements (at least MinOpenSides open directions).
  * args :
- *   - Face, X, Y: cell indices
- *   - MinOpenSides: minimum number of open sides required
+ * - Face, X, Y: cell indices
+ * - MinOpenSides: minimum number of open sides required
  * result: True if spawnable; otherwise False.
  */
 bool AOrchestrator::IsCellSpawnable(int32 Face, int32 X, int32 Y, int32 MinOpenSides) const
@@ -151,6 +150,12 @@ bool AOrchestrator::IsCellSpawnable(int32 Face, int32 X, int32 Y, int32 MinOpenS
 
 /**
  * desc : Randomly searches for a spawnable cell within MaxTries attempts.
+ * args :
+ * - OutFace, OutX, OutY: returned cell indices if found
+ * - MinOpenSides: minimum open sides required
+ * - MaxTries: maximum random attempts
+ * - PointSeed: Additional offset to ensure varied locations.
+ * result: True if a cell was found; otherwise False.
  */
 bool AOrchestrator::FindRandomSpawnCell(int32 &OutFace, int32 &OutX, int32 &OutY, int32 MinOpenSides, int32 MaxTries, int32 PointSeed) const
 {
@@ -159,7 +164,7 @@ bool AOrchestrator::FindRandomSpawnCell(int32 &OutFace, int32 &OutX, int32 &OutY
 
 	const int32 N = Maze->CellsPerFace;
 	if (N <= 0)
-		return false; // <-- The compiler was mad about a stray semicolon near here!
+		return false;
 
 	// LOCK THE RANDOMNESS TO YOUR MAZE SEED
 	FRandomStream Stream(Seed + PointSeed);
@@ -182,6 +187,17 @@ bool AOrchestrator::FindRandomSpawnCell(int32 &OutFace, int32 &OutX, int32 &OutY
 	return false;
 }
 
+/**
+ * desc : Finds a random maze cell that is "open enough" and returns a spawn transform
+ * aligned to the sphere surface + corridor direction.
+ * args :
+ * - OutTransform: returned spawn transform (rotation aligns to surface + hallway).
+ * - CapsuleHalfHeight: character capsule half height used to offset spawn above surface.
+ * - MinOpenSides: minimum number of open sides required for a cell to be spawnable.
+ * - MaxTries: maximum random attempts before failing.
+ * - PointSeed: Offset seed to ensure multiple calls generate different locations.
+ * result: True if a valid spawn cell was found; otherwise False (OutTransform becomes Identity).
+ */
 bool AOrchestrator::GetRandomSpawnTransform(FTransform &OutTransform, float CapsuleHalfHeight, int32 MinOpenSides, int32 MaxTries, int32 PointSeed) const
 {
 	if (!SphereActor || !Maze)
@@ -213,83 +229,7 @@ bool AOrchestrator::GetRandomSpawnTransform(FTransform &OutTransform, float Caps
 }
 
 /**
- * desc : Randomly searches for a spawnable cell within MaxTries attempts.
- * args :
- *   - OutFace, OutX, OutY: returned cell indices if found
- *   - MinOpenSides: minimum open sides required
- *   - MaxTries: maximum random attempts
- * result: True if a cell was found; otherwise False.
- */
-// bool AOrchestrator::FindRandomSpawnCell(int32 &OutFace, int32 &OutX, int32 &OutY,
-// 										int32 MinOpenSides, int32 MaxTries) const
-// {
-// 	if (!Maze)
-// 		return false;
-
-// 	const int32 N = Maze->CellsPerFace;
-// 	if (N <= 0)
-// 		return false;
-
-// 	for (int32 Try = 0; Try < MaxTries; ++Try)
-// 	{
-// 		const int32 Face = FMath::RandRange(0, 5);
-// 		const int32 X = FMath::RandRange(0, N - 1);
-// 		const int32 Y = FMath::RandRange(0, N - 1);
-
-// 		if (IsCellSpawnable(Face, X, Y, MinOpenSides))
-// 		{
-// 			OutFace = Face;
-// 			OutX = X;
-// 			OutY = Y;
-// 			return true;
-// 		}
-// 	}
-
-// 	return false;
-// }
-
-/**
- * desc : Finds a random maze cell that is "open enough" and returns a spawn transform
- *        aligned to the sphere surface + corridor direction.
- * args :
- *   - OutTransform: returned spawn transform (rotation aligns to surface + hallway).
- *   - CapsuleHalfHeight: character capsule half height used to offset spawn above surface.
- *   - MinOpenSides: minimum number of open sides required for a cell to be spawnable.
- *   - MaxTries: maximum random attempts before failing.
- * result: True if a valid spawn cell was found; otherwise False (OutTransform becomes Identity).
- */
-// bool AOrchestrator::GetRandomSpawnTransform(FTransform &OutTransform,
-// 											float CapsuleHalfHeight, int32 MinOpenSides, int32 MaxTries) const
-// {
-// 	if (!SphereActor || !Maze)
-// 		return false;
-
-// 	int32 Face, X, Y;
-// 	if (!FindRandomSpawnCell(Face, X, Y, MinOpenSides, MaxTries))
-// 	{
-// 		OutTransform = FTransform::Identity;
-// 		return false;
-// 	}
-
-// 	const FVector CenterWorld = SphereActor->GetCellCenterWorld(Face, X, Y);
-// 	const FVector SphereCenter = SphereActor->GetActorLocation();
-
-// 	const FVector UpDir = (CenterWorld - SphereCenter).GetSafeNormal();
-
-// 	FVector EdgeA, EdgeB;
-// 	SphereActor->GetCellWallEdgeWorld(Face, X, Y, EMazeDir::W, EdgeA, EdgeB);
-
-// 	const FVector ForwardDir = (EdgeA - EdgeB).GetSafeNormal();
-// 	const FRotator SpawnRot = FRotationMatrix::MakeFromXZ(ForwardDir, UpDir).Rotator();
-
-// 	const FVector SpawnLoc = CenterWorld + UpDir * (CapsuleHalfHeight + 2.f);
-
-// 	OutTransform = FTransform(SpawnRot, SpawnLoc, FVector::OneVector);
-// 	return true;
-// }
-
-/**
- * desc : Converts Maze walls into instanced mesh wall segments on the sphere surface.
+ * desc : Converts Maze logical walls into physical instanced mesh wall segments on the sphere surface.
  * args : None
  * result: None
  */
@@ -408,12 +348,10 @@ void AOrchestrator::BuildWallsFromMaze()
 }
 
 /**
- * desc : Debug/test pathfinding routine. Picks start/end points, runs Navigator->FindPath(),
- *        then draws results via instanced meshes or debug spheres.
+ * desc : Called when the game starts. Spawns the initial Start Marker and idle AI Runner.
  * args : None
  * result: None
  */
-
 void AOrchestrator::BeginPlay()
 {
 	Super::BeginPlay();
@@ -450,7 +388,12 @@ void AOrchestrator::BeginPlay()
 	}
 }
 
-void AOrchestrator::TriggerNextRun() // Bound to your Shift + 1
+/**
+ * desc : Triggers the spawn of new artifacts on the maze and wakes up the AI to hunt them.
+ * args : None
+ * result: None
+ */
+void AOrchestrator::TriggerNextRun()
 {
 	RuntimeSeedOffset += 100;
 	if (!SphereActor || !MarkerMesh || !ActiveRunner)
@@ -485,6 +428,12 @@ void AOrchestrator::TriggerNextRun() // Bound to your Shift + 1
 	}
 }
 
+/**
+ * desc : Brain function bound to the AI Runner's delegate. Calculates shortest distance to
+ * remaining artifacts, runs A* once, and dispatches the runner.
+ * args : None
+ * result: None
+ */
 void AOrchestrator::OnRunnerReachedArtifact()
 {
 	// 1. Destroy collected artifact
