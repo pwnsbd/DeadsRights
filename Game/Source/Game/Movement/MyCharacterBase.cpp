@@ -286,6 +286,25 @@ void AMyCharacterBase::HandleMoveInput(const FInputActionValue& Value)
 	else
 		MoveDir = ScreenRight * FMath::Sign(Axis.X);
 
+	// Snap camera to nearest 90° cardinal so diagonal yaw never causes ambiguous
+	// direction resolution.  Snap target is computed relative to character forward.
+	{
+		const FVector CharFwd   = FVector::VectorPlaneProject(
+		                              GetActorQuat().GetAxisX(), SurfNormal).GetSafeNormal();
+		const FVector CharRight = FVector::CrossProduct(SurfNormal, CharFwd).GetSafeNormal();
+
+		const FVector Cardinals[4] = { CharFwd, CharRight, -CharFwd, -CharRight };
+		float   BestDot = -2.f;
+		FVector BestDir = CharFwd;
+		for (const FVector& C : Cardinals)
+		{
+			const float D = FVector::DotProduct(CamFollowDir, C);
+			if (D > BestDot) { BestDot = D; BestDir = C; }
+		}
+		CamSnapTarget = BestDir;
+		bCamSnapping  = true;
+	}
+
 	TryMove(ResolveDir(MoveDir));
 }
 
@@ -306,6 +325,9 @@ void AMyCharacterBase::HandleLookInput(const FInputActionValue& Value)
 {
 	const FVector2D Delta = Value.Get<FVector2D>(); // X = horizontal, Y = vertical
 	if (Delta.IsNearlyZero()) return;
+
+	// Mouse overrides any in-progress cardinal snap.
+	bCamSnapping = false;
 
 	const FVector SurfNorm = (GetActorLocation() - GetSphereCenter()).GetSafeNormal();
 
@@ -605,9 +627,34 @@ void AMyCharacterBase::UpdateCamera(float DeltaSeconds)
 	const float HorizDist = CameraArmLength * FMath::Cos(PitchRad);
 	const float VertDist  = CameraArmLength * FMath::Sin(PitchRad);
 
-	// Camera offset uses a direction fixed at spawn (CamFollowDir) — never updated
-	// during play.  The camera stays at the same orbit angle regardless of which
-	// direction the character walks, eliminating all mid-game spinning.
+	// ---- Cardinal snap: smoothly rotate CamFollowDir toward the nearest 90° ----
+	if (bCamSnapping && !CamSnapTarget.IsNearlyZero())
+	{
+		const FVector SnapDir = FVector::VectorPlaneProject(CamSnapTarget, SurfNorm).GetSafeNormal();
+		if (!SnapDir.IsNearlyZero())
+		{
+			// Angle remaining between current direction and target.
+			const float AngleRad = FMath::Acos(
+			    FMath::Clamp(FVector::DotProduct(CamFollowDir, SnapDir), -1.f, 1.f));
+			const float StepRad  = FMath::DegreesToRadians(CameraSnapSpeed) * DeltaSeconds;
+			const float T        = (AngleRad > KINDA_SMALL_NUMBER)
+			                       ? FMath::Min(StepRad / AngleRad, 1.f)
+			                       : 1.f;
+
+			const FQuat Arc = FQuat::FindBetweenNormals(CamFollowDir, SnapDir);
+			CamFollowDir = FVector::VectorPlaneProject(
+			    FQuat::Slerp(FQuat::Identity, Arc, T).RotateVector(CamFollowDir),
+			    SurfNorm).GetSafeNormal();
+
+			if (T >= 1.f)
+			{
+				CamFollowDir = SnapDir;
+				bCamSnapping = false;
+			}
+		}
+	}
+
+	// Camera offset direction — updated by snap above or freely by mouse.
 	FVector FollowDir = FVector::VectorPlaneProject(CamFollowDir, SurfNorm).GetSafeNormal();
 	if (FollowDir.IsNearlyZero())
 		FollowDir = FVector::VectorPlaneProject(FVector::ForwardVector, SurfNorm).GetSafeNormal();
@@ -646,6 +693,25 @@ void AMyCharacterBase::UpdateCamera(float DeltaSeconds)
 	const float RotAlpha = FMath::Clamp(DeltaSeconds * CameraRotationLag, 0.f, 1.f);
 	CamQuat = FQuat::Slerp(CamQuat, AlignedTarget, RotAlpha);
 	CamQuat.Normalize();
+
+	if (bShowCameraDebug)
+	{
+		// Yaw: signed angle between CamFollowDir and character forward on the tangent plane.
+		// 0° = camera directly behind, ±180° = camera directly in front.
+		const FVector CharFwd = FVector::VectorPlaneProject(
+		                            GetActorQuat().GetAxisX(), SurfNorm).GetSafeNormal();
+		const float   CosYaw  = FMath::Clamp(FVector::DotProduct(FollowDir, CharFwd), -1.f, 1.f);
+		const float   YawSign = FVector::DotProduct(
+		                            FVector::CrossProduct(FollowDir, CharFwd), SurfNorm) >= 0.f
+		                        ? 1.f : -1.f;
+		const float   YawDeg  = YawSign * FMath::RadiansToDegrees(FMath::Acos(CosYaw));
+
+		const FString Msg = FString::Printf(
+		    TEXT("Cam Pitch: %.1f°   Cam Yaw: %.1f°"), CameraPitchAngle, YawDeg);
+
+		if (GEngine)
+			GEngine->AddOnScreenDebugMessage(42, 0.f, FColor::Cyan, Msg);
+	}
 }
 
 // =============================================================================

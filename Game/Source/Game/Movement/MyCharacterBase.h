@@ -196,6 +196,11 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Maze|Camera")
 	float CameraRotationLag = 10.f;
 
+	// Degrees per second at which the camera snaps to the nearest cardinal angle
+	// when movement is pressed.  Mouse input cancels the snap immediately.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Maze|Camera")
+	float CameraSnapSpeed = 270.f;
+
 	// Vertical field of view.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Maze|Camera")
 	float CameraFOV = 70.f;
@@ -223,6 +228,10 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Debug")
 	bool bAutoLogCurrentMazeFace = false;
 
+	// Show camera pitch and yaw on screen each frame.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Debug")
+	bool bShowCameraDebug = false;
+
 	// =========================================================================
 	// Private state
 	// =========================================================================
@@ -245,6 +254,12 @@ private:
 	// Last direction the character actually stepped in (world-space, tangential).
 	// Camera uses this so it never swings when A/D rotates the character in place.
 	FVector CamFollowDir  = FVector::ZeroVector;
+
+	// ---- Camera cardinal snap ----
+	// On movement input the camera smoothly snaps to the nearest 90° cardinal.
+	// Mouse input cancels the snap so the player regains free orbit.
+	bool    bCamSnapping     = false;
+	FVector CamSnapTarget    = FVector::ZeroVector; // world-space target direction
 
 	// ---- Input queue ----
 	// One move may be queued while a tween is in progress. It fires the moment
