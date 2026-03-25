@@ -107,28 +107,12 @@ public:
 	bool GetCellWallEdgeWorld(int32 Face, int32 CellX, int32 CellY, EMazeDir Dir,
 	                          FVector& OutA, FVector& OutB) const;
 
-	// ---- Helper functions for gameplay ----
-	/**
-	 * Convert a world position to the closest maze cell
-	 * Returns FMazeNode with Face, X, Y coordinates
-	 */
-	UFUNCTION(BlueprintCallable, Category="CubeToSphere|Helper")
-	FMazeNode WorldToMazeCell(FVector WorldPosition) const;
-
-	/**
-	 * Convert a world direction vector to a maze direction (N/E/S/W) for a given cell
-	 * ForwardVector: typically the character's forward vector
-	 * CurrentCell: the cell the character is standing in
-	 */
-	UFUNCTION(BlueprintCallable, Category="CubeToSphere|Helper")
-	EMazeDir GetDirectionFromVector(FVector ForwardVector, const FMazeNode& CurrentCell) const;
-	
 	/**
 	 * desc : Returns current sphere radius used for projection.
 	 * args : None
 	 * result: Radius value
 	 */
-	UFUNCTION(BlueprintPure, Category="CubeToSphere|Shape")
+	UFUNCTION(BlueprintPure, Category = "CubeToSphere|Shape")
 	float GetRadius() const { return Radius; }
 
 	/**
