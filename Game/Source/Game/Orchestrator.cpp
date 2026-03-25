@@ -1,13 +1,14 @@
 #include "Orchestrator.h"
 #include "Components/SceneComponent.h"
 #include "AI/MazeNavigator.h"
-#include "AI/MazeRunner.h"
 #include "Conversion/CubeToSphere.h"
 #include "Maze/Maze.h"
 #include "DrawDebugHelpers.h"
 #include "Components/InstancedStaticMeshComponent.h"
-#include "Engine/StaticMeshActor.h"
-
+#include "Kismet/GameplayStatics.h"
+#include "Components/CapsuleComponent.h"
+#include "Movement/GridMazePawn.h"
+#include "Movement/MyCharacterBase.h"
 /**
  * desc : Default constructor. Creates root + wall/path instanced mesh components and sets basic collision rules.
  * args : None
@@ -15,9 +16,9 @@
  */
 AOrchestrator::AOrchestrator()
 {
-	PrimaryActorTick.bCanEverTick = false;
+	PrimaryActorTick.bCanEverTick = true;
 
-	USceneComponent *Root = CreateDefaultSubobject<USceneComponent>(TEXT("Root"));
+	USceneComponent* Root = CreateDefaultSubobject<USceneComponent>(TEXT("Root"));
 	SetRootComponent(Root);
 
 	WallHISM = CreateDefaultSubobject<UInstancedStaticMeshComponent>(TEXT("WallHISM"));
@@ -25,14 +26,10 @@ AOrchestrator::AOrchestrator()
 	WallHISM->SetCollisionProfileName(TEXT("BlockAll"));
 	WallHISM->SetMobility(EComponentMobility::Movable);
 
-	WallHISM->SetCanEverAffectNavigation(false);
-
 	PathHISM = CreateDefaultSubobject<UInstancedStaticMeshComponent>(TEXT("PathHISM"));
 	PathHISM->SetupAttachment(Root);
 	PathHISM->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	PathHISM->SetMobility(EComponentMobility::Movable);
-
-	PathHISM->SetCanEverAffectNavigation(false);
 }
 
 /**
@@ -40,25 +37,38 @@ AOrchestrator::AOrchestrator()
  * args : Transform - current actor transform during construction.
  * result: None
  */
-void AOrchestrator::OnConstruction(const FTransform &Transform)
+void AOrchestrator::OnConstruction(const FTransform& Transform)
 {
 	Super::OnConstruction(Transform);
 	Rebuild();
 }
+
+
+static float GetPawnCapsuleHalfHeight(const APawn* P)
+{
+	if (!P) return 0.f;
+
+	const UCapsuleComponent* Cap = P->FindComponentByClass<UCapsuleComponent>();
+	if (!Cap) return 0.f;
+
+	return Cap->GetScaledCapsuleHalfHeight();
+}
+
 
 /**
  * desc : Searches attached ChildActorComponents and assigns SphereActor if a CubeToSphere child is found.
  * args : None
  * result: None
  */
+
 void AOrchestrator::ResolveSphereFromChild()
 {
 	SphereActor = nullptr;
 
-	TArray<UChildActorComponent *> ChildComps;
+	TArray<UChildActorComponent*> ChildComps;
 	GetComponents<UChildActorComponent>(ChildComps);
 
-	for (UChildActorComponent *CAC : ChildComps)
+	for (UChildActorComponent* CAC : ChildComps)
 	{
 		if (CAC && CAC->GetChildActor() == nullptr)
 		{
@@ -75,15 +85,21 @@ void AOrchestrator::ResolveSphereFromChild()
 		}
 	}
 }
+void AOrchestrator::RandomizeSeedNow()
+{
+    Seed = FMath::Rand();
+    Rebuild();
+}
 
 /**
  * desc : Full pipeline rebuild:
- * - resolves SphereActor from child actor component
- * - locks Resolution = CellsPerFace + 1
- * - builds sphere surface
- * - generates maze data
- * - builds wall instances
- * - initializes Navigator
+ *        - resolves SphereActor from child actor component
+ *        - locks Resolution = CellsPerFace + 1
+ *        - builds sphere surface
+ *        - generates maze data
+ *        - builds wall instances
+ *        - initializes Navigator
+ *        - runs A* debug/path visualization
  * args : None
  * result: None
  */
@@ -108,6 +124,30 @@ void AOrchestrator::Rebuild()
 		Navigator = NewObject<UMazeNavigator>(this);
 	}
 	Navigator->Init(Maze, SphereActor);
+
+	Astar();
+
+	if (UWorld* World = GetWorld())
+	{
+		AMyCharacterBase* Character = SpawnedPawn;
+		if (!Character)
+		{
+			Character = Cast<AMyCharacterBase>(
+				UGameplayStatics::GetActorOfClass(World, AMyCharacterBase::StaticClass())
+			);
+		}
+
+		if (Character)
+		{
+			Character->RefreshAfterMazeRebuild();
+		}
+		else if (AGridMazePawn* Pawn = Cast<AGridMazePawn>(
+			UGameplayStatics::GetActorOfClass(World, AGridMazePawn::StaticClass())
+		))
+		{
+			Pawn->RefreshAfterMazeRebuild();
+		}
+	}
 }
 
 /**
@@ -127,7 +167,7 @@ void AOrchestrator::EnsureMazeGenerated()
 	Maze->Generate();
 }
 
-static FORCEINLINE int32 CountOpenSides(const FMazeCell &C)
+static FORCEINLINE int32 CountOpenSides(const FMazeCell& C)
 {
 	return (C.OpenN ? 1 : 0) + (C.OpenE ? 1 : 0) + (C.OpenS ? 1 : 0) + (C.OpenW ? 1 : 0);
 }
@@ -135,8 +175,8 @@ static FORCEINLINE int32 CountOpenSides(const FMazeCell &C)
 /**
  * desc : Checks if a given cell meets spawn requirements (at least MinOpenSides open directions).
  * args :
- * - Face, X, Y: cell indices
- * - MinOpenSides: minimum number of open sides required
+ *   - Face, X, Y: cell indices
+ *   - MinOpenSides: minimum number of open sides required
  * result: True if spawnable; otherwise False.
  */
 bool AOrchestrator::IsCellSpawnable(int32 Face, int32 X, int32 Y, int32 MinOpenSides) const
@@ -144,20 +184,20 @@ bool AOrchestrator::IsCellSpawnable(int32 Face, int32 X, int32 Y, int32 MinOpenS
 	if (!Maze)
 		return false;
 
-	const FMazeCell &C = Maze->GetCell(Face, X, Y);
+	const FMazeCell& C = Maze->GetCell(Face, X, Y);
 	return CountOpenSides(C) >= MinOpenSides;
 }
 
 /**
  * desc : Randomly searches for a spawnable cell within MaxTries attempts.
  * args :
- * - OutFace, OutX, OutY: returned cell indices if found
- * - MinOpenSides: minimum open sides required
- * - MaxTries: maximum random attempts
- * - PointSeed: Additional offset to ensure varied locations.
+ *   - OutFace, OutX, OutY: returned cell indices if found
+ *   - MinOpenSides: minimum open sides required
+ *   - MaxTries: maximum random attempts
  * result: True if a cell was found; otherwise False.
  */
-bool AOrchestrator::FindRandomSpawnCell(int32 &OutFace, int32 &OutX, int32 &OutY, int32 MinOpenSides, int32 MaxTries, int32 PointSeed) const
+bool AOrchestrator::FindRandomSpawnCell(int32& OutFace, int32& OutX, int32& OutY,
+	int32 MinOpenSides, int32 MaxTries) const
 {
 	if (!Maze)
 		return false;
@@ -166,14 +206,11 @@ bool AOrchestrator::FindRandomSpawnCell(int32 &OutFace, int32 &OutX, int32 &OutY
 	if (N <= 0)
 		return false;
 
-	// LOCK THE RANDOMNESS TO YOUR MAZE SEED
-	FRandomStream Stream(Seed + PointSeed);
-
 	for (int32 Try = 0; Try < MaxTries; ++Try)
 	{
-		const int32 Face = Stream.RandRange(0, 5);
-		const int32 X = Stream.RandRange(0, N - 1);
-		const int32 Y = Stream.RandRange(0, N - 1);
+		const int32 Face = FMath::RandRange(0, 5);
+		const int32 X = FMath::RandRange(0, N - 1);
+		const int32 Y = FMath::RandRange(0, N - 1);
 
 		if (IsCellSpawnable(Face, X, Y, MinOpenSides))
 		{
@@ -187,25 +224,169 @@ bool AOrchestrator::FindRandomSpawnCell(int32 &OutFace, int32 &OutX, int32 &OutY
 	return false;
 }
 
-/**
- * desc : Finds a random maze cell that is "open enough" and returns a spawn transform
- * aligned to the sphere surface + corridor direction.
- * args :
- * - OutTransform: returned spawn transform (rotation aligns to surface + hallway).
- * - CapsuleHalfHeight: character capsule half height used to offset spawn above surface.
- * - MinOpenSides: minimum number of open sides required for a cell to be spawnable.
- * - MaxTries: maximum random attempts before failing.
- * - PointSeed: Offset seed to ensure multiple calls generate different locations.
- * result: True if a valid spawn cell was found; otherwise False (OutTransform becomes Identity).
- */
-bool AOrchestrator::GetRandomSpawnTransform(FTransform &OutTransform, float CapsuleHalfHeight, int32 MinOpenSides, int32 MaxTries, int32 PointSeed) const
+
+void AOrchestrator::RotateMazeToCell(
+    int32 FromFace, int32 FromX, int32 FromY,
+    int32 ToFace,   int32 ToX,   int32 ToY,
+    float Duration
+)
+{
+    if (!SphereActor)
+    {
+        return;
+    }
+
+    const FVector FromLocal = SphereActor->GetCellCenterLocal(FromFace, FromX, FromY).GetSafeNormal();
+    const FVector ToLocal   = SphereActor->GetCellCenterLocal(ToFace,   ToX,   ToY).GetSafeNormal();
+
+    if (FromLocal.IsNearlyZero() || ToLocal.IsNearlyZero())
+    {
+        return;
+    }
+
+    const FQuat Delta = FQuat::FindBetweenNormals(ToLocal, FromLocal);
+
+    RotateStart = GetActorQuat();
+    RotateMidTarget = RotateStart;
+    RotateTarget = Delta * RotateStart;
+    RotatePrimaryAxisWorld = FVector::UpVector;
+    RotatePrimaryAngleRadians = 0.f;
+
+    RotateElapsed = 0.f;
+    RotateDuration = FMath::Max(0.001f, Duration);
+    bUseSettledRollRotation = false;
+    bRotatingMaze = true;
+}
+
+void AOrchestrator::RotateMazeAgainstMoveDirection(
+    int32 FromFace, int32 FromX, int32 FromY,
+    int32 ToFace,   int32 ToX,   int32 ToY,
+    const FVector& DesiredWorldMoveDirection,
+    float Duration
+)
+{
+    if (!SphereActor || bRotatingMaze)
+    {
+        return;
+    }
+
+    const FVector FromLocal = SphereActor->GetCellCenterLocal(FromFace, FromX, FromY).GetSafeNormal();
+    const FVector ToLocal   = SphereActor->GetCellCenterLocal(ToFace,   ToX,   ToY).GetSafeNormal();
+
+    if (FromLocal.IsNearlyZero() || ToLocal.IsNearlyZero())
+    {
+        return;
+    }
+
+    const float StepAngleRadians = FMath::Acos(FMath::Clamp(FVector::DotProduct(FromLocal, ToLocal), -1.f, 1.f));
+    if (StepAngleRadians <= KINDA_SMALL_NUMBER)
+    {
+        return;
+    }
+
+    const FVector SphereCenterWorld = GetActorTransform().TransformPosition(FVector::ZeroVector);
+    const FVector FromWorld = SphereActor->GetCellCenterWorld(FromFace, FromX, FromY);
+    const FVector SurfaceNormal = (FromWorld - SphereCenterWorld).GetSafeNormal();
+    const FVector DesiredTangent = FVector::VectorPlaneProject(DesiredWorldMoveDirection, SurfaceNormal).GetSafeNormal();
+    const FVector RotationAxisWorld = FVector::CrossProduct(DesiredTangent, SurfaceNormal).GetSafeNormal();
+
+    if (SurfaceNormal.IsNearlyZero() || DesiredTangent.IsNearlyZero() || RotationAxisWorld.IsNearlyZero())
+    {
+        RotateMazeToCell(FromFace, FromX, FromY, ToFace, ToX, ToY, Duration);
+        return;
+    }
+
+    const FVector ToWorld = SphereActor->GetCellCenterWorld(ToFace, ToX, ToY);
+    const FVector ToWorldDirection = (ToWorld - SphereCenterWorld).GetSafeNormal();
+    if (ToWorldDirection.IsNearlyZero())
+    {
+        RotateMazeToCell(FromFace, FromX, FromY, ToFace, ToX, ToY, Duration);
+        return;
+    }
+
+    const FQuat PrimaryDelta(RotationAxisWorld, StepAngleRadians);
+    const FVector PrimaryTargetDirection = PrimaryDelta.RotateVector(ToWorldDirection).GetSafeNormal();
+    if (PrimaryTargetDirection.IsNearlyZero())
+    {
+        RotateMazeToCell(FromFace, FromX, FromY, ToFace, ToX, ToY, Duration);
+        return;
+    }
+
+    const float CorrectionAngleRadians = FMath::Acos(FMath::Clamp(FVector::DotProduct(PrimaryTargetDirection, SurfaceNormal), -1.f, 1.f));
+    const FVector CorrectionAxisWorld = FVector::CrossProduct(PrimaryTargetDirection, SurfaceNormal).GetSafeNormal();
+
+    RotateStart = GetActorQuat();
+    RotateMidTarget = (PrimaryDelta * RotateStart).GetNormalized();
+    RotateTarget = RotateMidTarget;
+    RotatePrimaryAxisWorld = RotationAxisWorld;
+    RotatePrimaryAngleRadians = StepAngleRadians;
+    RotateElapsed = 0.f;
+    RotateDuration = FMath::Max(0.001f, Duration);
+    bUseSettledRollRotation = true;
+
+    if (!CorrectionAxisWorld.IsNearlyZero() && CorrectionAngleRadians > KINDA_SMALL_NUMBER)
+    {
+        RotateTarget = (FQuat(CorrectionAxisWorld, CorrectionAngleRadians) * RotateMidTarget).GetNormalized();
+    }
+
+    bRotatingMaze = true;
+}
+
+void AOrchestrator::Tick(float DeltaSeconds)
+{
+    Super::Tick(DeltaSeconds);
+
+    if (!bRotatingMaze) return;
+
+    RotateElapsed += DeltaSeconds;
+
+    const float Alpha = FMath::Clamp(RotateElapsed / RotateDuration, 0.f, 1.f);
+    FQuat NewQ = RotateTarget;
+
+    if (bUseSettledRollRotation)
+    {
+        const float SafePrimaryPhase = FMath::Clamp(RotatePrimaryPhasePortion, 0.05f, 0.95f);
+        if (Alpha < SafePrimaryPhase)
+        {
+            const float PhaseAlpha = FMath::Clamp(Alpha / SafePrimaryPhase, 0.f, 1.f);
+            const float SmoothPhaseAlpha = FMath::InterpEaseInOut(0.f, 1.f, PhaseAlpha, 2.0f);
+            NewQ = (FQuat(RotatePrimaryAxisWorld, RotatePrimaryAngleRadians * SmoothPhaseAlpha) * RotateStart).GetNormalized();
+        }
+        else
+        {
+            const float PhaseAlpha = FMath::Clamp(
+                (Alpha - SafePrimaryPhase) / FMath::Max(KINDA_SMALL_NUMBER, 1.f - SafePrimaryPhase),
+                0.f,
+                1.f);
+            const float SmoothPhaseAlpha = FMath::InterpEaseInOut(0.f, 1.f, PhaseAlpha, 2.0f);
+            NewQ = FQuat::Slerp(RotateMidTarget, RotateTarget, SmoothPhaseAlpha).GetNormalized();
+        }
+    }
+    else
+    {
+        NewQ = FQuat::Slerp(RotateStart, RotateTarget, Alpha).GetNormalized();
+    }
+
+    SetActorRotation(NewQ);
+
+    if (Alpha >= 1.f)
+    {
+        SetActorRotation(RotateTarget);
+        bUseSettledRollRotation = false;
+        bRotatingMaze = false;
+    }
+}
+
+bool AOrchestrator::GetRandomSpawnTransform(FTransform &OutTransform,
+											float CapsuleHalfHeight,
+											int32 MinOpenSides,
+											int32 MaxTries) const
 {
 	if (!SphereActor || !Maze)
 		return false;
 
 	int32 Face, X, Y;
-	// Pass the PointSeed down into the math
-	if (!FindRandomSpawnCell(Face, X, Y, MinOpenSides, MaxTries, PointSeed))
+	if (!FindRandomSpawnCell(Face, X, Y, MinOpenSides, MaxTries))
 	{
 		OutTransform = FTransform::Identity;
 		return false;
@@ -229,7 +410,7 @@ bool AOrchestrator::GetRandomSpawnTransform(FTransform &OutTransform, float Caps
 }
 
 /**
- * desc : Converts Maze logical walls into physical instanced mesh wall segments on the sphere surface.
+ * desc : Converts Maze walls into instanced mesh wall segments on the sphere surface.
  * args : None
  * result: None
  */
@@ -250,74 +431,36 @@ void AOrchestrator::BuildWallsFromMaze()
 	if (N <= 0)
 		return;
 
-	// Helps with maze and sphere being on the same center when we move sphere in view
-	auto AddWallFromEdgeLocal = [&](const FVector &A, const FVector &B)
+	auto AddWallFromEdgeLocal = [&](const FVector& A, const FVector& B)
 	{
-		if (A.ContainsNaN() || B.ContainsNaN())
-			return;
-
 		const FVector Edge = (B - A);
 		const float EdgeLen = Edge.Size();
-
-		if (EdgeLen <= 0.1f || !FMath::IsFinite(EdgeLen))
-			return;
-		if (WallMeshBaseLength <= 0.1f)
+		if (EdgeLen <= KINDA_SMALL_NUMBER)
 			return;
 
 		const FVector Mid = (A + B) * 0.5f;
 		const FVector Up = Mid.GetSafeNormal();
-
-		if (Up.IsNearlyZero() || Up.ContainsNaN())
-			return;
-
 		const FVector Fwd = Edge / EdgeLen;
-		if (Fwd.ContainsNaN())
-			return;
 
-		// THE MISSING LINK: Prevent collinear matrix collapse!
-		// If Forward and Up are parallel, the rotation matrix explodes.
-		if (FMath::Abs(FVector::DotProduct(Fwd, Up)) > 0.99f)
-			return;
-
-		FQuat Rot = FRotationMatrix::MakeFromXZ(Fwd, Up).ToQuat();
-
-		// Force check the quaternion
-		if (Rot.ContainsNaN() || !Rot.IsNormalized())
-			return;
-
+		const FQuat Rot = FRotationMatrix::MakeFromXZ(Fwd, Up).ToQuat();
 		const FVector Loc = Mid + Up * (WallHeight * 0.5f + WallSurfaceOffset);
 
-		// Hard-clamp scales so they can never reach Infinity or 0
 		const FVector Scale(
-			FMath::Clamp(EdgeLen / WallMeshBaseLength, 0.01f, 1000.0f),
-			FMath::Clamp(WallThickness / WallMeshBaseLength, 0.01f, 1000.0f),
-			FMath::Clamp(WallHeight / WallMeshBaseLength, 0.01f, 1000.0f));
+			EdgeLen / WallMeshBaseLength,
+			WallThickness / WallMeshBaseLength,
+			WallHeight / WallMeshBaseLength);
 
-		if (Loc.ContainsNaN() || Scale.ContainsNaN())
-			return;
-
-		// Explicitly build the transform
-		FTransform InstanceTransform;
-		InstanceTransform.SetComponents(Rot, Loc, Scale);
-
-		if (InstanceTransform.IsValid() && WallHISM)
-		{
-			WallHISM->AddInstance(InstanceTransform);
-		}
+		WallHISM->AddInstance(FTransform(Rot, Loc, Scale));
 	};
 
-	auto IsOpen = [&](const FMazeCell &C, EMazeDir Dir) -> bool
+	auto IsOpen = [&](const FMazeCell& C, EMazeDir Dir) -> bool
 	{
 		switch (Dir)
 		{
-		case EMazeDir::N:
-			return C.OpenN;
-		case EMazeDir::E:
-			return C.OpenE;
-		case EMazeDir::S:
-			return C.OpenS;
-		case EMazeDir::W:
-			return C.OpenW;
+		case EMazeDir::N: return C.OpenN;
+		case EMazeDir::E: return C.OpenE;
+		case EMazeDir::S: return C.OpenS;
+		case EMazeDir::W: return C.OpenW;
 		}
 		return false;
 	};
@@ -328,7 +471,7 @@ void AOrchestrator::BuildWallsFromMaze()
 		{
 			for (int32 X = 0; X < N; ++X)
 			{
-				const FMazeCell &Cell = Maze->GetCell(Face, X, Y);
+				const FMazeCell& Cell = Maze->GetCell(Face, X, Y);
 				FVector A, B;
 
 				if (!IsOpen(Cell, EMazeDir::E) && SphereActor->GetCellWallEdgeLocal(Face, X, Y, EMazeDir::E, A, B))
@@ -348,142 +491,69 @@ void AOrchestrator::BuildWallsFromMaze()
 }
 
 /**
- * desc : Called when the game starts. Spawns the initial Start Marker and idle AI Runner.
+ * desc : Debug/test pathfinding routine. Picks start/end points, runs Navigator->FindPath(),
+ *        then draws results via instanced meshes or debug spheres.
  * args : None
  * result: None
  */
-void AOrchestrator::BeginPlay()
+void AOrchestrator::Astar()
 {
-	Super::BeginPlay();
-
-	if (!SphereActor || !MazeRunnerClass || !MarkerMesh)
-		return;
-
-	FActorSpawnParameters SpawnParams;
-	SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-
-	FTransform StartTransform;
-	// Pick ONE random spot to spawn the Runner at the very beginning of the game
-	if (GetRandomSpawnTransform(StartTransform, 15.0f, 1, 5000, 1))
+	if (!SphereActor)
 	{
-		StartMarkerRef = GetWorld()->SpawnActor<AStaticMeshActor>(AStaticMeshActor::StaticClass(), StartTransform, SpawnParams);
-		if (StartMarkerRef)
-		{
-			StartMarkerRef->GetStaticMeshComponent()->SetMobility(EComponentMobility::Movable);
-			StartMarkerRef->AttachToActor(SphereActor, FAttachmentTransformRules::KeepWorldTransform);
-			StartMarkerRef->GetStaticMeshComponent()->SetStaticMesh(MarkerMesh);
-			if (StartMaterial)
-				StartMarkerRef->GetStaticMeshComponent()->SetMaterial(0, StartMaterial);
-			StartMarkerRef->SetActorScale3D(FVector(0.25f));
-		}
-
-		ActiveRunner = GetWorld()->SpawnActor<AMazeRunner>(MazeRunnerClass, StartTransform, SpawnParams);
-		if (ActiveRunner)
-		{
-			ActiveRunner->AttachToActor(SphereActor, FAttachmentTransformRules::KeepWorldTransform);
-
-			// Hook up the ears! When it finishes a path, it runs our Brain function.
-			ActiveRunner->OnPathCompleted.AddDynamic(this, &AOrchestrator::OnRunnerReachedArtifact);
-		}
+		UE_LOG(LogTemp, Error, TEXT("A* TEST FAILED: SphereActor is null!"));
+		return;
 	}
-}
 
-/**
- * desc : Triggers the spawn of new artifacts on the maze and wakes up the AI to hunt them.
- * args : None
- * result: None
- */
-void AOrchestrator::TriggerNextRun()
-{
-	RuntimeSeedOffset += 100;
-	if (!SphereActor || !MarkerMesh || !ActiveRunner)
-		return;
+	FlushPersistentDebugLines(GetWorld());
 
-	FActorSpawnParameters SpawnParams;
-	SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	int32 MaxCell = SphereActor->GetCellsPerFace() - 1;
 
-	for (int32 i = 0; i < NumArtifactsToSpawn; ++i)
+	FVector StartPos = SphereActor->GetCellCenterWorld(1, MaxCell / 2, MaxCell / 2);
+	FVector EndPos   = SphereActor->GetCellCenterWorld(0, MaxCell / 2, MaxCell / 2);
+
+	DrawDebugSphere(GetWorld(), StartPos, 30.0f, 12, FColor::Blue, true, 20.0f);
+	DrawDebugSphere(GetWorld(), EndPos,   30.0f, 12, FColor::Red,  true, 20.0f);
+
+	TArray<FVector> PathResult;
+
+	if (Navigator != nullptr)
 	{
-		FTransform ArtTransform;
-		if (GetRandomSpawnTransform(ArtTransform, 15.0f, 1, 5000, 2 + RuntimeSeedOffset + i))
+		bool bFoundPath = Navigator->FindPath(StartPos, EndPos, PathResult);
+
+		if (bFoundPath)
 		{
-			AStaticMeshActor *Artifact = GetWorld()->SpawnActor<AStaticMeshActor>(AStaticMeshActor::StaticClass(), ArtTransform, SpawnParams);
-			if (Artifact)
+			if (PathHISM && PathMesh)
 			{
-				Artifact->GetStaticMeshComponent()->SetMobility(EComponentMobility::Movable);
-				Artifact->AttachToActor(SphereActor, FAttachmentTransformRules::KeepWorldTransform);
-				Artifact->GetStaticMeshComponent()->SetStaticMesh(MarkerMesh);
-				if (EndMaterial)
-					Artifact->GetStaticMeshComponent()->SetMaterial(0, EndMaterial);
-				Artifact->SetActorScale3D(FVector(0.25f));
-				ActiveArtifacts.Add(Artifact);
-			}
-		}
-	}
+				PathHISM->SetStaticMesh(PathMesh);
 
-	// If the Runner is idle (has no target), wake it up to hunt the new item!
-	if (!CurrentTargetArtifact)
-	{
-		OnRunnerReachedArtifact();
-	}
-}
-
-/**
- * desc : Brain function bound to the AI Runner's delegate. Calculates shortest distance to
- * remaining artifacts, runs A* once, and dispatches the runner.
- * args : None
- * result: None
- */
-void AOrchestrator::OnRunnerReachedArtifact()
-{
-	// 1. Destroy collected artifact
-	if (CurrentTargetArtifact)
-	{
-		ActiveArtifacts.Remove(CurrentTargetArtifact);
-		CurrentTargetArtifact->Destroy();
-		CurrentTargetArtifact = nullptr;
-	}
-
-	// 2. Are we out of artifacts? Do nothing! Stand idle.
-	if (ActiveArtifacts.IsEmpty())
-	{
-		return;
-	}
-
-	// 3. PERFORMANCE FIX: Find closest artifact using straight-line distance FIRST!
-	AStaticMeshActor *BestArtifact = nullptr;
-	float ClosestDistance = MAX_FLT; // Start with infinitely far away
-	FVector StartLoc = ActiveRunner->GetActorLocation();
-
-	for (AStaticMeshActor *Artifact : ActiveArtifacts)
-	{
-		// DistSquared is heavily optimized for CPUs because it skips calculating square roots!
-		float Dist = FVector::DistSquared(StartLoc, Artifact->GetActorLocation());
-		if (Dist < ClosestDistance)
-		{
-			ClosestDistance = Dist;
-			BestArtifact = Artifact;
-		}
-	}
-
-	// 4. ONLY RUN A* EXACTLY ONCE FOR THE WINNING ARTIFACT
-	if (BestArtifact)
-	{
-		TArray<FVector> BestPath;
-
-		// We only calculate the maze path for the closest item
-		if (Navigator->FindPath(StartLoc, BestArtifact->GetActorLocation(), BestPath))
-		{
-			CurrentTargetArtifact = BestArtifact;
-
-			TArray<FVector> LocalPath;
-			FTransform SphereTransform = SphereActor->GetTransform();
-			for (const FVector &WorldPoint : BestPath)
-			{
-				LocalPath.Add(SphereTransform.InverseTransformPosition(WorldPoint));
+				if (PathMaterial)
+				{
+					PathHISM->SetMaterial(0, PathMaterial);
+				}
 			}
 
-			ActiveRunner->SetPath(LocalPath, SphereActor);
+			if (PathHISM && PathHISM->GetStaticMesh())
+			{
+				PathHISM->ClearInstances();
+
+				for (const FVector& Point : PathResult)
+				{
+					FVector LocalPos = GetActorTransform().InverseTransformPosition(Point);
+					FVector UpDir = LocalPos.GetSafeNormal();
+
+					LocalPos += UpDir * 10.0f;
+
+					FTransform InstanceTransform(FRotator::ZeroRotator, LocalPos, FVector(0.1f));
+					PathHISM->AddInstance(InstanceTransform);
+				}
+			}
+			else
+			{
+				for (const FVector& Point : PathResult)
+				{
+					DrawDebugSphere(GetWorld(), Point, 15.0f, 12, FColor::Green, true, 20.0f);
+				}
+			}
 		}
 	}
 }
