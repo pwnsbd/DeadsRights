@@ -304,3 +304,45 @@ bool ACubeToSphere::GetCellWallEdgeWorld(int32 Face, int32 CellX, int32 CellY, E
 	OutB = GetActorTransform().TransformPosition(BLocal);
 	return true;
 }
+
+FMazeNode ACubeToSphere::WorldToMazeCell(const FVector& WorldPos) const
+{
+	const int32 CPF = GetCellsPerFace();
+	float BestDistSq = FLT_MAX;
+	FMazeNode Best(0, 0, 0);
+	for (int32 F = 0; F < 6; ++F)
+		for (int32 CX = 0; CX < CPF; ++CX)
+			for (int32 CY = 0; CY < CPF; ++CY)
+			{
+				const float D = FVector::DistSquared(WorldPos, GetCellCenterWorld(F, CX, CY));
+				if (D < BestDistSq) { BestDistSq = D; Best = FMazeNode(F, CX, CY); }
+			}
+	return Best;
+}
+
+EMazeDir ACubeToSphere::GetDirectionFromVector(const FVector& WorldDir, const FMazeNode& Cell) const
+{
+	const FVector CellCenter = GetCellCenterWorld(Cell.Face, Cell.X, Cell.Y);
+	const FVector SurfNormal = (CellCenter - GetActorLocation()).GetSafeNormal();
+	const FVector TangDir    = FVector::VectorPlaneProject(WorldDir, SurfNormal).GetSafeNormal();
+
+	const int32 CPF = GetCellsPerFace();
+	const FMazeNode Neighbors[4] = {
+		FMazeNode(Cell.Face, Cell.X,                                FMath::Clamp(Cell.Y - 1, 0, CPF - 1)),
+		FMazeNode(Cell.Face, FMath::Clamp(Cell.X + 1, 0, CPF - 1), Cell.Y                              ),
+		FMazeNode(Cell.Face, Cell.X,                                FMath::Clamp(Cell.Y + 1, 0, CPF - 1)),
+		FMazeNode(Cell.Face, FMath::Clamp(Cell.X - 1, 0, CPF - 1), Cell.Y                              ),
+	};
+	const EMazeDir Dirs[4] = { EMazeDir::N, EMazeDir::E, EMazeDir::S, EMazeDir::W };
+
+	float BestDot = -2.f;
+	EMazeDir BestDir = EMazeDir::N;
+	for (int32 i = 0; i < 4; ++i)
+	{
+		const FVector NPos = GetCellCenterWorld(Neighbors[i].Face, Neighbors[i].X, Neighbors[i].Y);
+		const FVector ToN  = (NPos - CellCenter).GetSafeNormal();
+		const float Dot    = FVector::DotProduct(TangDir, ToN);
+		if (Dot > BestDot) { BestDot = Dot; BestDir = Dirs[i]; }
+	}
+	return BestDir;
+}
