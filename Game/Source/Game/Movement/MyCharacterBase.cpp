@@ -10,7 +10,7 @@
 #include "Kismet/GameplayStatics.h"
 #include "GameFramework/PlayerController.h"
 
-#include "Orchestrator.h"
+#include "../Orchestrator.h"
 #include "../Conversion/CubeToSphere.h"
 #include "../Maze/Maze.h"
 
@@ -351,7 +351,7 @@ void AMyCharacterBase::HandleLookInput(const FInputActionValue& Value)
 		const float Sign  = bInvertMouseY ? 1.f : -1.f;
 		CameraPitchAngle  = FMath::Clamp(
 		                        CameraPitchAngle + Sign * Delta.Y * MouseSensitivity,
-		                        5.f, 85.f);
+		                        5.f, 75.f);
 	}
 }
 
