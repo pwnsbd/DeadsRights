@@ -6,7 +6,7 @@
 #include "EngineUtils.h"
 #include "GameFramework/Character.h"
 #include "Components/CapsuleComponent.h"
-#include "AI/MazeNavigator.h"
+#include "../AI/MazeNavigator.h"
 //#include "EnemyPawn.h"
 
 #include "Components/StaticMeshComponent.h"
