@@ -10,7 +10,7 @@
 #include "Kismet/GameplayStatics.h"
 #include "GameFramework/PlayerController.h"
 
-#include "Orchestrator.h"
+#include "../Orchestrator.h"
 #include "../Conversion/CubeToSphere.h"
 #include "../Maze/Maze.h"
 
