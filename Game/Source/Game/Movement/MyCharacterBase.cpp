@@ -351,7 +351,7 @@ void AMyCharacterBase::HandleLookInput(const FInputActionValue& Value)
 		const float Sign  = bInvertMouseY ? 1.f : -1.f;
 		CameraPitchAngle  = FMath::Clamp(
 		                        CameraPitchAngle + Sign * Delta.Y * MouseSensitivity,
-		                        5.f, 85.f);
+		                        5.f, 75.f);
 	}
 }
 
