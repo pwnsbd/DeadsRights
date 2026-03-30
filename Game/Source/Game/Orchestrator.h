@@ -92,6 +92,8 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Orchestrator | AI")
 	void TriggerNextRun();
 
+	UMaze* GetMaze() const { return Maze; }
+
 	/**
 	 * desc : Brain function bound to the AI Runner's delegate. Calculates shortest distance to
 	 * remaining artifacts, runs A* once, and dispatches the runner.

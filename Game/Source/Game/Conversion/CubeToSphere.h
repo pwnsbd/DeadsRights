@@ -108,6 +108,23 @@ public:
 	                          FVector& OutA, FVector& OutB) const;
 
 	/**
+	 * desc : Finds the maze cell whose center is closest to the given world position.
+	 * args : WorldPos - world-space position to convert
+	 * result: FMazeNode with the nearest cell coordinates
+	 */
+	FMazeNode WorldToMazeCell(const FVector& WorldPos) const;
+
+	/**
+	 * desc : Returns the maze direction (N/E/S/W) that best matches a world-space direction
+	 *        from the perspective of the supplied cell on the sphere surface.
+	 * args :
+	 *   - WorldDir: world-space direction vector
+	 *   - Cell: the cell from which direction is evaluated
+	 * result: EMazeDir closest to WorldDir on the tangent plane at Cell
+	 */
+	EMazeDir GetDirectionFromVector(const FVector& WorldDir, const FMazeNode& Cell) const;
+
+	/**
 	 * desc : Returns current sphere radius used for projection.
 	 * args : None
 	 * result: Radius value
