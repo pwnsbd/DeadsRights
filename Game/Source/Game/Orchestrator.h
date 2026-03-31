@@ -4,11 +4,13 @@
 #include "GameFramework/Actor.h"
 #include "AI/MazeNavigator.h"
 #include "Components/ChildActorComponent.h"
+#include "ProceduralMeshComponent.h"
 #include "Orchestrator.generated.h"
 
 class ACubeToSphere;
 class UMaze;
 class UInstancedStaticMeshComponent;
+class UProceduralMeshComponent;
 class UStaticMesh;
 class UMaterialInterface;
 
@@ -62,7 +64,7 @@ public:
 	 * args : None
 	 * result: None
 	 */
-	UFUNCTION(BlueprintCallable, Category = "Orchestrator")
+	UFUNCTION(CallInEditor, BlueprintCallable, Category = "Orchestrator")
 	void Rebuild();
 
 	/**
@@ -187,6 +189,8 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Orchestrator | Walls")
 	float WallMeshBaseLength = 100.f;
 
+
+
 	/** Wall height along local Up (sphere normal). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Orchestrator | Walls")
 	float WallHeight = 20.f;
@@ -198,6 +202,18 @@ public:
 	/** Push walls slightly away from surface to avoid z-fighting. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Orchestrator | Walls")
 	float WallSurfaceOffset = 1.f;
+
+	/** Use generated curved wall geometry instead of one placed static mesh per edge. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Orchestrator | Walls")
+	bool bUseProceduralWalls = true;
+
+	/** Material applied to rebuilt walls. Used by both HISM and procedural wall paths. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Orchestrator | Walls")
+	UMaterialInterface* WallMaterial = nullptr;
+
+	/** Number of arc slices used to curve one logical wall edge around the sphere. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Orchestrator | Walls", meta = (ClampMin = "1", UIMin = "1"))
+	int32 WallArcSubdivisions = 6;
 
 	// ---------- Path Debug / Visualization ----------
 
@@ -221,6 +237,10 @@ protected:
 	/** Instanced mesh component holding all physical wall segments. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Orchestrator | Walls")
 	UInstancedStaticMeshComponent *WallHISM = nullptr;
+
+	/** Procedural mesh used for curved generated walls. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Orchestrator | Walls")
+	UProceduralMeshComponent *WallProcMesh = nullptr;
 
 	/** Instanced mesh component holding path markers. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Orchestrator | Path")
@@ -251,6 +271,16 @@ private:
 	 * result: None
 	 */
 	void BuildWallsFromMaze();
+
+	/** Appends one curved wall strip between two local-space edge endpoints. */
+	void AppendCurvedWallEdge(
+		const FVector &LocalA,
+		const FVector &LocalB,
+		TArray<FVector> &Vertices,
+		TArray<int32> &Triangles,
+		TArray<FVector> &Normals,
+		TArray<FVector2D> &UVs,
+		TArray<FProcMeshTangent> &Tangents) const;
 
 	/**
 	 * desc : Checks if a given cell meets spawn requirements (at least MinOpenSides open directions).
