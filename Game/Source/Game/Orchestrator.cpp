@@ -6,7 +6,43 @@
 #include "Maze/Maze.h"
 #include "DrawDebugHelpers.h"
 #include "Components/InstancedStaticMeshComponent.h"
+#include "ProceduralMeshComponent.h"
 #include "Engine/StaticMeshActor.h"
+
+
+namespace
+{
+	static FVector SlerpDirOnSphere(const FVector &A, const FVector &B, float Alpha)
+	{
+		const FVector SA = A.GetSafeNormal();
+		const FVector SB = B.GetSafeNormal();
+
+		if (SA.IsNearlyZero() || SB.IsNearlyZero())
+		{
+			return FVector::ZeroVector;
+		}
+
+		const FQuat Arc = FQuat::FindBetweenNormals(SA, SB);
+		return FQuat::Slerp(FQuat::Identity, Arc, Alpha).RotateVector(SA).GetSafeNormal();
+	}
+
+	static void AppendQuad(
+		int32 I0, int32 I1, int32 I2, int32 I3,
+		TArray<int32> &Triangles,
+		bool bFlip = false)
+	{
+		if (!bFlip)
+		{
+			Triangles.Add(I0); Triangles.Add(I2); Triangles.Add(I1);
+			Triangles.Add(I1); Triangles.Add(I2); Triangles.Add(I3);
+		}
+		else
+		{
+			Triangles.Add(I0); Triangles.Add(I1); Triangles.Add(I2);
+			Triangles.Add(I1); Triangles.Add(I3); Triangles.Add(I2);
+		}
+	}
+}
 
 /**
  * desc : Default constructor. Creates root + wall/path instanced mesh components and sets basic collision rules.
@@ -26,6 +62,34 @@ AOrchestrator::AOrchestrator()
 	WallHISM->SetMobility(EComponentMobility::Movable);
 
 	WallHISM->SetCanEverAffectNavigation(false);
+
+	CornerHISM = CreateDefaultSubobject<UInstancedStaticMeshComponent>(TEXT("CornerHISM"));
+	CornerHISM->SetupAttachment(Root);
+	CornerHISM->SetCollisionProfileName(TEXT("BlockAll"));
+	CornerHISM->SetMobility(EComponentMobility::Movable);
+	CornerHISM->SetCanEverAffectNavigation(false);
+
+	WallProcMesh = CreateDefaultSubobject<UProceduralMeshComponent>(TEXT("WallProcMesh"));
+	WallProcMesh->SetupAttachment(Root);
+	WallProcMesh->SetCollisionProfileName(TEXT("BlockAll"));
+	WallProcMesh->SetMobility(EComponentMobility::Movable);
+	WallProcMesh->SetCanEverAffectNavigation(false);
+
+	if (CornerHISM)
+	{
+		CornerHISM->ClearInstances();
+		CornerHISM->SetVisibility(true);
+
+		if (CornerMesh)
+		{
+			CornerHISM->SetStaticMesh(CornerMesh);
+		}
+
+		if (WallMaterial)
+		{
+			CornerHISM->SetMaterial(0, WallMaterial);
+		}
+	}
 
 	PathHISM = CreateDefaultSubobject<UInstancedStaticMeshComponent>(TEXT("PathHISM"));
 	PathHISM->SetupAttachment(Root);
@@ -228,121 +292,558 @@ bool AOrchestrator::GetRandomSpawnTransform(FTransform &OutTransform, float Caps
 	return true;
 }
 
+bool AOrchestrator::GetWallSegmentCentersWorld(
+	int32 Face,
+	int32 X,
+	int32 Y,
+	EMazeDir Dir,
+	FVector& OutBaseCenter,
+	FVector& OutTopCenter) const
+{
+	OutBaseCenter = FVector::ZeroVector;
+	OutTopCenter  = FVector::ZeroVector;
+
+	if (!SphereActor)
+	{
+		return false;
+	}
+
+	FVector EdgeA, EdgeB;
+	if (!SphereActor->GetCellWallEdgeWorld(Face, X, Y, Dir, EdgeA, EdgeB))
+	{
+		return false;
+	}
+
+	const FVector BaseCenter = (EdgeA + EdgeB) * 0.5f;
+	const FVector SphereCenter = SphereActor->GetActorLocation();
+	const FVector UpDir = (BaseCenter - SphereCenter).GetSafeNormal();
+
+	if (UpDir.IsNearlyZero())
+	{
+		return false;
+	}
+
+	OutBaseCenter = BaseCenter + UpDir * WallSurfaceOffset;
+	OutTopCenter  = OutBaseCenter + UpDir * WallHeight;
+	return true;
+}
+
+bool AOrchestrator::GetWallSegmentFrameWorld(
+	int32 Face,
+	int32 X,
+	int32 Y,
+	EMazeDir Dir,
+	FVector& OutBaseCenter,
+	FVector& OutTopCenter,
+	FVector& OutUpDir,
+	FVector& OutRightDir,
+	FVector& OutForwardDir) const
+{
+	OutBaseCenter = FVector::ZeroVector;
+	OutTopCenter  = FVector::ZeroVector;
+	OutUpDir      = FVector::ZeroVector;
+	OutRightDir   = FVector::ZeroVector;
+	OutForwardDir = FVector::ZeroVector;
+
+	if (!SphereActor)
+	{
+		return false;
+	}
+
+	FVector EdgeA, EdgeB;
+	if (!SphereActor->GetCellWallEdgeWorld(Face, X, Y, Dir, EdgeA, EdgeB))
+	{
+		return false;
+	}
+
+	const FVector BaseCenter = (EdgeA + EdgeB) * 0.5f;
+	const FVector SphereCenter = SphereActor->GetActorLocation();
+
+	const FVector UpDir = (BaseCenter - SphereCenter).GetSafeNormal();
+	if (UpDir.IsNearlyZero())
+	{
+		return false;
+	}
+
+	FVector ForwardDir = (EdgeB - EdgeA).GetSafeNormal();
+	if (ForwardDir.IsNearlyZero())
+	{
+		return false;
+	}
+
+	ForwardDir = FVector::VectorPlaneProject(ForwardDir, UpDir).GetSafeNormal();
+	if (ForwardDir.IsNearlyZero())
+	{
+		return false;
+	}
+
+	const FVector RightDir = FVector::CrossProduct(UpDir, ForwardDir).GetSafeNormal();
+
+	OutBaseCenter = BaseCenter + UpDir * WallSurfaceOffset;
+	OutTopCenter  = OutBaseCenter + UpDir * WallHeight;
+	OutUpDir      = UpDir;
+	OutRightDir   = RightDir;
+	OutForwardDir = ForwardDir;
+	return true;
+}
+
+
+
+bool AOrchestrator::GetWallSegmentTransformWorld(
+	int32 Face,
+	int32 X,
+	int32 Y,
+	EMazeDir Dir,
+	FTransform& OutTransform) const
+{
+	OutTransform = FTransform::Identity;
+
+	if (!SphereActor || !WallMesh)
+	{
+		return false;
+	}
+
+	FVector EdgeA, EdgeB;
+	if (!SphereActor->GetCellWallEdgeWorld(Face, X, Y, Dir, EdgeA, EdgeB))
+	{
+		return false;
+	}
+
+	const FVector Edge = EdgeB - EdgeA;
+	const float EdgeLen = Edge.Size();
+
+	if (EdgeLen <= 0.1f || WallMeshBaseLength <= 0.1f)
+	{
+		return false;
+	}
+
+	const FVector Mid = (EdgeA + EdgeB) * 0.5f;
+	const FVector SphereCenter = SphereActor->GetActorLocation();
+	const FVector UpDir = (Mid - SphereCenter).GetSafeNormal();
+
+	if (UpDir.IsNearlyZero())
+	{
+		return false;
+	}
+
+	FVector ForwardDir = Edge / EdgeLen;
+	ForwardDir = FVector::VectorPlaneProject(ForwardDir, UpDir).GetSafeNormal();
+
+	if (ForwardDir.IsNearlyZero())
+	{
+		return false;
+	}
+
+	const FQuat Rot = FRotationMatrix::MakeFromXZ(ForwardDir, UpDir).ToQuat();
+	const FVector Loc = Mid + UpDir * (WallHeight * 0.5f + WallSurfaceOffset);
+
+	const FVector Scale(
+		EdgeLen / WallMeshBaseLength,
+		WallThickness / WallMeshBaseLength,
+		WallHeight / WallMeshBaseLength
+	);
+
+	OutTransform = FTransform(Rot, Loc, Scale);
+	return true;
+}
+
 /**
  * desc : Converts Maze logical walls into physical instanced mesh wall segments on the sphere surface.
  * args : None
  * result: None
  */
+void AOrchestrator::AppendCurvedWallEdge(
+	const FVector &LocalA,
+	const FVector &LocalB,
+	TArray<FVector> &Vertices,
+	TArray<int32> &Triangles,
+	TArray<FVector> &Normals,
+	TArray<FVector2D> &UVs,
+	TArray<FProcMeshTangent> &Tangents) const
+{
+	if (!SphereActor)
+	{
+		return;
+	}
+
+	const int32 NumSlices = FMath::Max(1, WallArcSubdivisions);
+	const float Radius = SphereActor->GetRadius();
+	const float HalfThickness = WallThickness * 0.5f;
+
+	for (int32 Slice = 0; Slice < NumSlices; ++Slice)
+	{
+		const float T0 = (float)Slice / (float)NumSlices;
+		const float T1 = (float)(Slice + 1) / (float)NumSlices;
+
+		const FVector Dir0 = SlerpDirOnSphere(LocalA, LocalB, T0);
+		const FVector Dir1 = SlerpDirOnSphere(LocalA, LocalB, T1);
+		if (Dir0.IsNearlyZero() || Dir1.IsNearlyZero())
+		{
+			continue;
+		}
+
+		const FVector P0 = Dir0 * Radius;
+		const FVector P1 = Dir1 * Radius;
+
+		FVector Forward = (P1 - P0).GetSafeNormal();
+		if (Forward.IsNearlyZero())
+		{
+			continue;
+		}
+
+		const FVector Up0 = Dir0;
+		const FVector Up1 = Dir1;
+		FVector Right0 = FVector::CrossProduct(Up0, Forward).GetSafeNormal();
+		FVector Right1 = FVector::CrossProduct(Up1, Forward).GetSafeNormal();
+
+		if (Right0.IsNearlyZero() || Right1.IsNearlyZero())
+		{
+			continue;
+		}
+
+		const FVector Base0 = P0 + Up0 * WallSurfaceOffset;
+		const FVector Base1 = P1 + Up1 * WallSurfaceOffset;
+
+		const FVector B0L = Base0 - Right0 * HalfThickness;
+		const FVector B0R = Base0 + Right0 * HalfThickness;
+		const FVector T0L = B0L + Up0 * WallHeight;
+		const FVector T0R = B0R + Up0 * WallHeight;
+
+		const FVector B1L = Base1 - Right1 * HalfThickness;
+		const FVector B1R = Base1 + Right1 * HalfThickness;
+		const FVector T1L = B1L + Up1 * WallHeight;
+		const FVector T1R = B1R + Up1 * WallHeight;
+
+		const int32 BaseIndex = Vertices.Num();
+		Vertices.Append({ B0L, B0R, T0L, T0R, B1L, B1R, T1L, T1R });
+
+		const float U0 = T0;
+		const float U1 = T1;
+
+		Normals.Add(B0L.GetSafeNormal()); UVs.Add(FVector2D(U0, 0.0f)); Tangents.Add(FProcMeshTangent(Forward, false));
+		Normals.Add(B0R.GetSafeNormal()); UVs.Add(FVector2D(U0, 0.0f)); Tangents.Add(FProcMeshTangent(Forward, false));
+		Normals.Add(T0L.GetSafeNormal()); UVs.Add(FVector2D(U0, 1.0f)); Tangents.Add(FProcMeshTangent(Forward, false));
+		Normals.Add(T0R.GetSafeNormal()); UVs.Add(FVector2D(U0, 1.0f)); Tangents.Add(FProcMeshTangent(Forward, false));
+
+		Normals.Add(B1L.GetSafeNormal()); UVs.Add(FVector2D(U1, 0.0f)); Tangents.Add(FProcMeshTangent(Forward, false));
+		Normals.Add(B1R.GetSafeNormal()); UVs.Add(FVector2D(U1, 0.0f)); Tangents.Add(FProcMeshTangent(Forward, false));
+		Normals.Add(T1L.GetSafeNormal()); UVs.Add(FVector2D(U1, 1.0f)); Tangents.Add(FProcMeshTangent(Forward, false));
+		Normals.Add(T1R.GetSafeNormal()); UVs.Add(FVector2D(U1, 1.0f)); Tangents.Add(FProcMeshTangent(Forward, false));
+
+		// outside face
+		AppendQuad(BaseIndex + 1, BaseIndex + 5, BaseIndex + 3, BaseIndex + 7, Triangles, false);
+		// inside face
+		AppendQuad(BaseIndex + 4, BaseIndex + 0, BaseIndex + 6, BaseIndex + 2, Triangles, false);
+		// top face
+		AppendQuad(BaseIndex + 2, BaseIndex + 3, BaseIndex + 6, BaseIndex + 7, Triangles, false);
+		// start cap
+		if (Slice == 0)
+		{
+			AppendQuad(BaseIndex + 0, BaseIndex + 1, BaseIndex + 2, BaseIndex + 3, Triangles, false);
+		}
+		// end cap
+		if (Slice == NumSlices - 1)
+		{
+			AppendQuad(BaseIndex + 5, BaseIndex + 4, BaseIndex + 7, BaseIndex + 6, Triangles, false);
+		}
+	}
+}
+
+namespace
+{
+	struct FCornerAccum
+	{
+		FVector Pos = FVector::ZeroVector;
+		TArray<FVector> Dirs;
+	};
+
+	FString MakeCornerKey(const FVector& P)
+	{
+		const FVector Q = P.GridSnap(0.1f);
+		return FString::Printf(TEXT("%.1f_%.1f_%.1f"), Q.X, Q.Y, Q.Z);
+	}
+
+	bool HasNonCollinearPair(const TArray<FVector>& Dirs)
+	{
+		for (int32 i = 0; i < Dirs.Num(); ++i)
+		{
+			for (int32 j = i + 1; j < Dirs.Num(); ++j)
+			{
+				const float Dot = FMath::Abs(FVector::DotProduct(
+					Dirs[i].GetSafeNormal(),
+					Dirs[j].GetSafeNormal()));
+
+				if (Dot < 0.95f)
+				{
+					return true;
+				}
+			}
+		}
+		return false;
+	}
+}
+/**
+ * desc : Converts Maze logical walls into physical wall geometry on the sphere surface.
+ * args : None
+ * result: None
+ */
 void AOrchestrator::BuildWallsFromMaze()
 {
-	if (!WallHISM || !SphereActor || !Maze)
-		return;
-	if (!WallMesh)
+	if (CornerHISM)
+	{
+		CornerHISM->ClearInstances();
+		CornerHISM->SetVisibility(true);
+
+		if (CornerMesh)
+		{
+			CornerHISM->SetStaticMesh(CornerMesh);
+		}
+
+		if (WallMaterial)
+		{
+			CornerHISM->SetMaterial(0, WallMaterial);
+		}
+	}
+
+	if (!SphereActor || !Maze)
 		return;
 
-	WallHISM->SetStaticMesh(WallMesh);
-	if (!WallHISM->GetStaticMesh())
-		return;
+	if (WallHISM)
+	{
+		WallHISM->ClearInstances();
+		WallHISM->SetVisibility(!bUseProceduralWalls);
+	}
 
-	WallHISM->ClearInstances();
+	if (WallProcMesh)
+	{
+		WallProcMesh->ClearAllMeshSections();
+		WallProcMesh->SetVisibility(bUseProceduralWalls);
+	}
+
+	if (!bUseProceduralWalls)
+	{
+		if (!WallHISM || !WallMesh)
+			return;
+
+		WallHISM->SetStaticMesh(WallMesh);
+		if (!WallHISM->GetStaticMesh())
+			return;
+		
+		if (WallMaterial)
+		{
+			WallHISM->SetMaterial(0, WallMaterial);
+		}
+		
+		const int32 N = Maze->CellsPerFace;
+		if (N <= 0)
+			return;
+
+		auto AddWallFromEdgeLocal = [&](const FVector &A, const FVector &B)
+		{
+			if (A.ContainsNaN() || B.ContainsNaN())
+				return;
+
+			const FVector Edge = (B - A);
+			const float EdgeLen = Edge.Size();
+			if (EdgeLen <= 0.1f || !FMath::IsFinite(EdgeLen) || WallMeshBaseLength <= 0.1f)
+				return;
+
+			const FVector Mid = (A + B) * 0.5f;
+			const FVector Up = Mid.GetSafeNormal();
+			if (Up.IsNearlyZero() || Up.ContainsNaN())
+				return;
+
+			const FVector Fwd = Edge / EdgeLen;
+			if (Fwd.ContainsNaN() || FMath::Abs(FVector::DotProduct(Fwd, Up)) > 0.99f)
+				return;
+
+			FQuat Rot = FRotationMatrix::MakeFromXZ(Fwd, Up).ToQuat();
+			if (Rot.ContainsNaN() || !Rot.IsNormalized())
+				return;
+
+			const FVector Loc = Mid + Up * (WallHeight * 0.5f + WallSurfaceOffset);
+			const FVector Scale(
+				FMath::Clamp(EdgeLen / WallMeshBaseLength, 0.01f, 1000.0f),
+				FMath::Clamp(WallThickness / WallMeshBaseLength, 0.01f, 1000.0f),
+				FMath::Clamp(WallHeight / WallMeshBaseLength, 0.01f, 1000.0f));
+
+			FTransform InstanceTransform;
+			InstanceTransform.SetComponents(Rot, Loc, Scale);
+			if (InstanceTransform.IsValid() && WallHISM)
+			{
+				WallHISM->AddInstance(InstanceTransform);
+			}
+		};
+
+		auto IsOpen = [&](const FMazeCell &C, EMazeDir Dir) -> bool
+		{
+			switch (Dir)
+			{
+			case EMazeDir::N: return C.OpenN;
+			case EMazeDir::E: return C.OpenE;
+			case EMazeDir::S: return C.OpenS;
+			case EMazeDir::W: return C.OpenW;
+			}
+			return false;
+		};
+
+		for (int32 Face = 0; Face < 6; ++Face)
+		for (int32 Y = 0; Y < N; ++Y)
+		for (int32 X = 0; X < N; ++X)
+		{
+			const FMazeCell &Cell = Maze->GetCell(Face, X, Y);
+			FVector A, B;
+			if (!IsOpen(Cell, EMazeDir::E) && SphereActor->GetCellWallEdgeLocal(Face, X, Y, EMazeDir::E, A, B)) AddWallFromEdgeLocal(A, B);
+			if (!IsOpen(Cell, EMazeDir::S) && SphereActor->GetCellWallEdgeLocal(Face, X, Y, EMazeDir::S, A, B)) AddWallFromEdgeLocal(A, B);
+			if (X == 0 && !IsOpen(Cell, EMazeDir::W) && SphereActor->GetCellWallEdgeLocal(Face, X, Y, EMazeDir::W, A, B)) AddWallFromEdgeLocal(A, B);
+			if (Y == 0 && !IsOpen(Cell, EMazeDir::N) && SphereActor->GetCellWallEdgeLocal(Face, X, Y, EMazeDir::N, A, B)) AddWallFromEdgeLocal(A, B);
+		}
+
+		return;
+	}
+
+	if (!WallProcMesh)
+	{
+		return;
+	}
 
 	const int32 N = Maze->CellsPerFace;
 	if (N <= 0)
-		return;
-
-	// Helps with maze and sphere being on the same center when we move sphere in view
-	auto AddWallFromEdgeLocal = [&](const FVector &A, const FVector &B)
 	{
-		if (A.ContainsNaN() || B.ContainsNaN())
-			return;
+		return;
+	}
 
-		const FVector Edge = (B - A);
-		const float EdgeLen = Edge.Size();
+	TArray<FVector> Vertices;
+	TArray<int32> Triangles;
+	TArray<FVector> Normals;
+	TArray<FVector2D> UVs;
+	TArray<FProcMeshTangent> Tangents;
+	TArray<FColor> Colors;
 
-		if (EdgeLen <= 0.1f || !FMath::IsFinite(EdgeLen))
-			return;
-		if (WallMeshBaseLength <= 0.1f)
-			return;
+	TMap<FString, FCornerAccum> CornerMap;
 
-		const FVector Mid = (A + B) * 0.5f;
-		const FVector Up = Mid.GetSafeNormal();
+	auto AddCornerSample = [&](const FVector& P, const FVector& AlongEdge)
+	{
+		const FString Key = MakeCornerKey(P);
+		FCornerAccum* Found = CornerMap.Find(Key);
 
-		if (Up.IsNearlyZero() || Up.ContainsNaN())
-			return;
-
-		const FVector Fwd = Edge / EdgeLen;
-		if (Fwd.ContainsNaN())
-			return;
-
-		// THE MISSING LINK: Prevent collinear matrix collapse!
-		// If Forward and Up are parallel, the rotation matrix explodes.
-		if (FMath::Abs(FVector::DotProduct(Fwd, Up)) > 0.99f)
-			return;
-
-		FQuat Rot = FRotationMatrix::MakeFromXZ(Fwd, Up).ToQuat();
-
-		// Force check the quaternion
-		if (Rot.ContainsNaN() || !Rot.IsNormalized())
-			return;
-
-		const FVector Loc = Mid + Up * (WallHeight * 0.5f + WallSurfaceOffset);
-
-		// Hard-clamp scales so they can never reach Infinity or 0
-		const FVector Scale(
-			FMath::Clamp(EdgeLen / WallMeshBaseLength, 0.01f, 1000.0f),
-			FMath::Clamp(WallThickness / WallMeshBaseLength, 0.01f, 1000.0f),
-			FMath::Clamp(WallHeight / WallMeshBaseLength, 0.01f, 1000.0f));
-
-		if (Loc.ContainsNaN() || Scale.ContainsNaN())
-			return;
-
-		// Explicitly build the transform
-		FTransform InstanceTransform;
-		InstanceTransform.SetComponents(Rot, Loc, Scale);
-
-		if (InstanceTransform.IsValid() && WallHISM)
+		if (!Found)
 		{
-			WallHISM->AddInstance(InstanceTransform);
+			FCornerAccum NewCorner;
+			NewCorner.Pos = P;
+			NewCorner.Dirs.Add(AlongEdge.GetSafeNormal());
+			CornerMap.Add(Key, NewCorner);
+		}
+		else
+		{
+			Found->Dirs.Add(AlongEdge.GetSafeNormal());
 		}
 	};
+
+	Vertices.Reserve(N * N * 6 * 8);
+	Triangles.Reserve(N * N * 6 * 18);
 
 	auto IsOpen = [&](const FMazeCell &C, EMazeDir Dir) -> bool
 	{
 		switch (Dir)
 		{
-		case EMazeDir::N:
-			return C.OpenN;
-		case EMazeDir::E:
-			return C.OpenE;
-		case EMazeDir::S:
-			return C.OpenS;
-		case EMazeDir::W:
-			return C.OpenW;
+		case EMazeDir::N: return C.OpenN;
+		case EMazeDir::E: return C.OpenE;
+		case EMazeDir::S: return C.OpenS;
+		case EMazeDir::W: return C.OpenW;
 		}
 		return false;
 	};
 
 	for (int32 Face = 0; Face < 6; ++Face)
+	for (int32 Y = 0; Y < N; ++Y)
+	for (int32 X = 0; X < N; ++X)
 	{
-		for (int32 Y = 0; Y < N; ++Y)
+		const FMazeCell &Cell = Maze->GetCell(Face, X, Y);
+		FVector A, B;
+
+		if (!IsOpen(Cell, EMazeDir::E) && SphereActor->GetCellWallEdgeLocal(Face, X, Y, EMazeDir::E, A, B))
 		{
-			for (int32 X = 0; X < N; ++X)
+			AppendCurvedWallEdge(A, B, Vertices, Triangles, Normals, UVs, Tangents);
+			const FVector EdgeDir = (B - A).GetSafeNormal();
+			AddCornerSample(A, EdgeDir);
+			AddCornerSample(B, EdgeDir);
+		}
+
+		if (!IsOpen(Cell, EMazeDir::S) && SphereActor->GetCellWallEdgeLocal(Face, X, Y, EMazeDir::S, A, B))
+		{
+			AppendCurvedWallEdge(A, B, Vertices, Triangles, Normals, UVs, Tangents);
+
+			const FVector EdgeDir = (B - A).GetSafeNormal();
+			AddCornerSample(A, EdgeDir);
+			AddCornerSample(B, EdgeDir);
+		}
+
+		if (X == 0 && !IsOpen(Cell, EMazeDir::W) && SphereActor->GetCellWallEdgeLocal(Face, X, Y, EMazeDir::W, A, B))
+		{
+			AppendCurvedWallEdge(A, B, Vertices, Triangles, Normals, UVs, Tangents);
+
+			const FVector EdgeDir = (B - A).GetSafeNormal();
+			AddCornerSample(A, EdgeDir);
+			AddCornerSample(B, EdgeDir);
+		}
+
+		if (Y == 0 && !IsOpen(Cell, EMazeDir::N) && SphereActor->GetCellWallEdgeLocal(Face, X, Y, EMazeDir::N, A, B))
+		{
+			AppendCurvedWallEdge(A, B, Vertices, Triangles, Normals, UVs, Tangents);
+
+			const FVector EdgeDir = (B - A).GetSafeNormal();
+			AddCornerSample(A, EdgeDir);
+			AddCornerSample(B, EdgeDir);
+		}
+	}
+
+	Colors.Init(FColor::White, Vertices.Num());
+	WallProcMesh->CreateMeshSection(0, Vertices, Triangles, Normals, UVs, Colors, Tangents, true);
+
+	if (CornerHISM && CornerMesh && CornerHISM->GetStaticMesh())
+	{
+		const float CornerHeight = WallHeight + CornerHeightExtra;
+
+		const float CornerScaleXY = FMath::Max(0.01f, CornerDiameter / WallMeshBaseLength);
+		const float CornerScaleZ  = FMath::Max(0.01f, CornerHeight / WallMeshBaseLength);
+
+		for (const TPair<FString, FCornerAccum>& Pair : CornerMap)
+		{
+			const FCornerAccum& Corner = Pair.Value;
+
+			if (Corner.Dirs.Num() < 2)
+				continue;
+
+			if (!HasNonCollinearPair(Corner.Dirs))
+				continue;
+
+			const FVector Up = Corner.Pos.GetSafeNormal();
+			if (Up.IsNearlyZero())
+				continue;
+
+			const FVector Loc = Corner.Pos + Up * (CornerHeight * 0.5f + WallSurfaceOffset);
+			const FQuat Rot = FRotationMatrix::MakeFromZ(Up).ToQuat();
+
+			FTransform T;
+			T.SetComponents(Rot, Loc, FVector(CornerScaleXY, CornerScaleXY, CornerScaleZ));
+
+			if (T.IsValid())
 			{
-				const FMazeCell &Cell = Maze->GetCell(Face, X, Y);
-				FVector A, B;
-
-				if (!IsOpen(Cell, EMazeDir::E) && SphereActor->GetCellWallEdgeLocal(Face, X, Y, EMazeDir::E, A, B))
-					AddWallFromEdgeLocal(A, B);
-
-				if (!IsOpen(Cell, EMazeDir::S) && SphereActor->GetCellWallEdgeLocal(Face, X, Y, EMazeDir::S, A, B))
-					AddWallFromEdgeLocal(A, B);
-
-				if (X == 0 && !IsOpen(Cell, EMazeDir::W) && SphereActor->GetCellWallEdgeLocal(Face, X, Y, EMazeDir::W, A, B))
-					AddWallFromEdgeLocal(A, B);
-
-				if (Y == 0 && !IsOpen(Cell, EMazeDir::N) && SphereActor->GetCellWallEdgeLocal(Face, X, Y, EMazeDir::N, A, B))
-					AddWallFromEdgeLocal(A, B);
+				CornerHISM->AddInstance(T);
 			}
+		}
+	}
+
+	if (WallMaterial)
+	{
+		WallProcMesh->SetMaterial(0, WallMaterial);
+	}
+	else if (WallMesh && WallMesh->GetStaticMaterials().Num() > 0)
+	{
+		if (UMaterialInterface *FallbackMat = WallMesh->GetStaticMaterials()[0].MaterialInterface)
+		{
+			WallProcMesh->SetMaterial(0, FallbackMat);
 		}
 	}
 }
