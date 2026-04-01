@@ -203,6 +203,18 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Orchestrator | Walls")
 	float WallSurfaceOffset = 1.f;
 
+	/** Mesh used to cap wall intersections. Set this to a cylinder in Blueprint. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Orchestrator | Walls")
+	UStaticMesh *CornerMesh = nullptr;
+
+	/** Diameter of the corner cap cylinder. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Orchestrator | Walls")
+	float CornerDiameter = 6.f;
+
+	/** Extra height added above wall height so the cap fully covers the join. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Orchestrator | Walls")
+	float CornerHeightExtra = 2.f;
+
 	/** Use generated curved wall geometry instead of one placed static mesh per edge. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Orchestrator | Walls")
 	bool bUseProceduralWalls = true;
@@ -225,6 +237,39 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Orchestrator | Path")
 	UMaterialInterface *PathMaterial = nullptr;
 
+
+	UFUNCTION(BlueprintCallable, Category = "Orchestrator|Walls")
+	bool GetWallSegmentCentersWorld(
+		int32 Face,
+		int32 X,
+		int32 Y,
+		EMazeDir Dir,
+		FVector& OutBaseCenter,
+		FVector& OutTopCenter) const;
+
+	UFUNCTION(BlueprintCallable, Category = "Orchestrator|Walls")
+	bool GetWallSegmentFrameWorld(
+		int32 Face,
+		int32 X,
+		int32 Y,
+		EMazeDir Dir,
+		FVector& OutBaseCenter,
+		FVector& OutTopCenter,
+		FVector& OutUpDir,
+		FVector& OutRightDir,
+		FVector& OutForwardDir) const;
+
+	UFUNCTION(BlueprintCallable, Category = "Orchestrator|Walls")
+	bool GetWallSegmentTransformWorld(
+		int32 Face,
+		int32 X,
+		int32 Y,
+		EMazeDir Dir,
+		FTransform& OutTransform) const;
+
+
+	
+
 protected:
 	// =========================================================
 	// Owned Data / Components (Protected)
@@ -237,6 +282,10 @@ protected:
 	/** Instanced mesh component holding all physical wall segments. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Orchestrator | Walls")
 	UInstancedStaticMeshComponent *WallHISM = nullptr;
+
+	/** Instanced mesh component holding corner caps at wall intersections. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Orchestrator | Walls")
+	UInstancedStaticMeshComponent *CornerHISM = nullptr;
 
 	/** Procedural mesh used for curved generated walls. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Orchestrator | Walls")
