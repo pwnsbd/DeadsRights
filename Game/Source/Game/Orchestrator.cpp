@@ -589,6 +589,22 @@ namespace
  */
 void AOrchestrator::BuildWallsFromMaze()
 {
+	if (CornerHISM)
+	{
+		CornerHISM->ClearInstances();
+		CornerHISM->SetVisibility(true);
+
+		if (CornerMesh)
+		{
+			CornerHISM->SetStaticMesh(CornerMesh);
+		}
+
+		if (WallMaterial)
+		{
+			CornerHISM->SetMaterial(0, WallMaterial);
+		}
+	}
+
 	if (!SphereActor || !Maze)
 		return;
 
