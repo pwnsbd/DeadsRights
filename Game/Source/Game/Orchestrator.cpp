@@ -559,7 +559,7 @@ namespace
 
 	FString MakeCornerKey(const FVector& P)
 	{
-		const FVector Q = P.GridSnap(0.1f);
+		const FVector Q = P.GridSnap(5.0f);
 		return FString::Printf(TEXT("%.1f_%.1f_%.1f"), Q.X, Q.Y, Q.Z);
 	}
 
@@ -589,6 +589,13 @@ namespace
  */
 void AOrchestrator::BuildWallsFromMaze()
 {
+	UE_LOG(LogTemp, Warning,
+	TEXT("CORNER SETUP CornerHISM=%s CornerMesh=%s HISMStaticMesh=%s UseProcedural=%s"),
+	CornerHISM ? TEXT("VALID") : TEXT("NULL"),
+	CornerMesh ? *GetNameSafe(CornerMesh) : TEXT("NULL"),
+	(CornerHISM && CornerHISM->GetStaticMesh()) ? *GetNameSafe(CornerHISM->GetStaticMesh()) : TEXT("NULL"),
+	bUseProceduralWalls ? TEXT("true") : TEXT("false"));
+
 	if (CornerHISM)
 	{
 		CornerHISM->ClearInstances();
@@ -738,6 +745,12 @@ void AOrchestrator::BuildWallsFromMaze()
 		{
 			Found->Dirs.Add(AlongEdge.GetSafeNormal());
 		}
+
+		UE_LOG(LogTemp, Warning,
+		TEXT("AddCornerSample P=%s Dir=%s Key=%s"),
+		*P.ToString(),
+		*AlongEdge.GetSafeNormal().ToString(),
+		*Key);
 	};
 
 	Vertices.Reserve(N * N * 6 * 8);
@@ -799,6 +812,8 @@ void AOrchestrator::BuildWallsFromMaze()
 	}
 
 	Colors.Init(FColor::White, Vertices.Num());
+
+	UE_LOG(LogTemp, Warning, TEXT("CornerMap Size: %d"), CornerMap.Num());
 	WallProcMesh->CreateMeshSection(0, Vertices, Triangles, Normals, UVs, Colors, Tangents, true);
 
 	if (CornerHISM && CornerMesh && CornerHISM->GetStaticMesh())
@@ -812,11 +827,22 @@ void AOrchestrator::BuildWallsFromMaze()
 		{
 			const FCornerAccum& Corner = Pair.Value;
 
+			UE_LOG(LogTemp, Warning,
+				TEXT("CORNER CHECK Pos=%s Dirs=%d"),
+				*Corner.Pos.ToString(),
+				Corner.Dirs.Num());
+
 			if (Corner.Dirs.Num() < 2)
+			{
+				UE_LOG(LogTemp, Warning, TEXT("CORNER SKIP not enough dirs"));
 				continue;
+			}
 
 			if (!HasNonCollinearPair(Corner.Dirs))
+			{
+				UE_LOG(LogTemp, Warning, TEXT("CORNER SKIP collinear"));
 				continue;
+			}
 
 			const FVector Up = Corner.Pos.GetSafeNormal();
 			if (Up.IsNearlyZero())
@@ -830,6 +856,12 @@ void AOrchestrator::BuildWallsFromMaze()
 
 			if (T.IsValid())
 			{
+				UE_LOG(LogTemp, Warning,
+				TEXT("CORNER SPAWN Loc=%s ScaleXY=%.3f ScaleZ=%.3f"),
+				*Loc.ToString(),
+				CornerScaleXY,
+				CornerScaleZ);
+
 				CornerHISM->AddInstance(T);
 			}
 		}
