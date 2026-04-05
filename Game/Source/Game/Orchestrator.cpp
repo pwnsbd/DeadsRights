@@ -860,31 +860,25 @@ void AOrchestrator::BeginPlay()
 	if (!SphereActor || !MazeRunnerClass || !MarkerMesh)
 		return;
 
+	// 1. ADD THIS LINE (It was missing/commented out)
 	FActorSpawnParameters SpawnParams;
 	SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
 
-	FTransform StartTransform;
-	// Pick ONE random spot to spawn the Runner at the very beginning of the game
-	if (GetRandomSpawnTransform(StartTransform, 15.0f, 1, 5000, 1))
+	SpawnParams.Owner = this;
+
+	for (int32 i = 0; i < 2; i++)
 	{
-		StartMarkerRef = GetWorld()->SpawnActor<AStaticMeshActor>(AStaticMeshActor::StaticClass(), StartTransform, SpawnParams);
-		if (StartMarkerRef)
+		FTransform SpawnTransform;
+		if (GetRandomSpawnTransform(SpawnTransform, 15.0f, 1, 5000, 10 + i))
 		{
-			StartMarkerRef->GetStaticMeshComponent()->SetMobility(EComponentMobility::Movable);
-			StartMarkerRef->AttachToActor(SphereActor, FAttachmentTransformRules::KeepWorldTransform);
-			StartMarkerRef->GetStaticMeshComponent()->SetStaticMesh(MarkerMesh);
-			if (StartMaterial)
-				StartMarkerRef->GetStaticMeshComponent()->SetMaterial(0, StartMaterial);
-			StartMarkerRef->SetActorScale3D(FVector(0.25f));
-		}
+			AMazeRunner *NewRunner = GetWorld()->SpawnActor<AMazeRunner>(MazeRunnerClass, SpawnTransform, SpawnParams);
+			if (NewRunner)
+			{
+				NewRunner->AttachToActor(SphereActor, FAttachmentTransformRules::KeepWorldTransform);
+				ActiveRunners.Add(NewRunner); // Adds to our 2-AI list
 
-		ActiveRunner = GetWorld()->SpawnActor<AMazeRunner>(MazeRunnerClass, StartTransform, SpawnParams);
-		if (ActiveRunner)
-		{
-			ActiveRunner->AttachToActor(SphereActor, FAttachmentTransformRules::KeepWorldTransform);
-
-			// Hook up the ears! When it finishes a path, it runs our Brain function.
-			ActiveRunner->OnPathCompleted.AddDynamic(this, &AOrchestrator::OnRunnerReachedArtifact);
+				AssignTargetToRunner(NewRunner);
+			}
 		}
 	}
 }
@@ -897,7 +891,9 @@ void AOrchestrator::BeginPlay()
 void AOrchestrator::TriggerNextRun()
 {
 	RuntimeSeedOffset += 100;
-	if (!SphereActor || !MarkerMesh || !ActiveRunner)
+
+	// FIX: Check if the array has any runners instead of looking for a single 'ActiveRunner'
+	if (!SphereActor || !MarkerMesh || ActiveRunners.Num() == 0)
 		return;
 
 	FActorSpawnParameters SpawnParams;
@@ -917,6 +913,12 @@ void AOrchestrator::TriggerNextRun()
 				if (EndMaterial)
 					Artifact->GetStaticMeshComponent()->SetMaterial(0, EndMaterial);
 				Artifact->SetActorScale3D(FVector(0.25f));
+
+				// --- NEW: Enable Player Overlaps ---
+				Artifact->GetStaticMeshComponent()->SetCollisionProfileName(TEXT("OverlapAllDynamic"));
+				Artifact->GetStaticMeshComponent()->SetGenerateOverlapEvents(true);
+				Artifact->OnActorBeginOverlap.AddDynamic(this, &AOrchestrator::OnArtifactOverlapped);
+
 				ActiveArtifacts.Add(Artifact);
 			}
 		}
@@ -935,9 +937,70 @@ void AOrchestrator::TriggerNextRun()
  * args : None
  * result: None
  */
+
+/**
+ * desc : Finds the node on the sphere geographically furthest from the specified actor.
+ */
+FVector AOrchestrator::GetFarthestNodeFromActor(AActor *TargetActor)
+{
+	if (!TargetActor || !SphereActor || !Maze)
+		return GetActorLocation();
+
+	FVector TargetLoc = TargetActor->GetActorLocation();
+	float MaxDistSq = 0.0f;
+	FVector BestPoint = TargetLoc;
+
+	for (int32 Face = 0; Face < 6; Face++)
+	{
+		for (int32 X = 0; X < Maze->CellsPerFace; X += 4)
+		{ // Scan every 4th for speed
+			for (int32 Y = 0; Y < Maze->CellsPerFace; Y += 4)
+			{
+				FVector NodeLoc = SphereActor->GetCellCenterWorld(Face, X, Y);
+				float DistSq = FVector::DistSquared(NodeLoc, TargetLoc);
+				if (DistSq > MaxDistSq)
+				{
+					MaxDistSq = DistSq;
+					BestPoint = NodeLoc;
+				}
+			}
+		}
+	}
+	return BestPoint;
+}
+
+void AOrchestrator::OnArtifactOverlapped(AActor *OverlappedActor, AActor *OtherActor)
+{
+	// If the player touches the artifact
+	if (OtherActor && OtherActor->IsA(APawn::StaticClass()))
+	{
+		AStaticMeshActor *Artifact = Cast<AStaticMeshActor>(OverlappedActor);
+		if (Artifact && ActiveArtifacts.Contains(Artifact))
+		{
+			ActiveArtifacts.Remove(Artifact);
+			Artifact->Destroy();
+
+			// CRITICAL FIX: Aggressively remove dead AI pointers before looping!
+			ActiveRunners.RemoveAll([](AMazeRunner *Val)
+									{ return !IsValid(Val); });
+
+			// Tell any surviving AI that was hunting this specific artifact to pick a new one
+			for (AMazeRunner *Runner : ActiveRunners)
+			{
+				// Added IsValid safety check just in case
+				if (IsValid(Runner) && Runner->MyTarget == Artifact)
+				{
+					Runner->MyTarget = nullptr;
+					AssignTargetToRunner(Runner);
+				}
+			}
+		}
+	}
+}
+
 void AOrchestrator::OnRunnerReachedArtifact()
 {
-	// 1. Destroy collected artifact
+	// 1. Artifact Cleanup
 	if (CurrentTargetArtifact)
 	{
 		ActiveArtifacts.Remove(CurrentTargetArtifact);
@@ -945,46 +1008,100 @@ void AOrchestrator::OnRunnerReachedArtifact()
 		CurrentTargetArtifact = nullptr;
 	}
 
-	// 2. Are we out of artifacts? Do nothing! Stand idle.
 	if (ActiveArtifacts.IsEmpty())
-	{
 		return;
-	}
 
-	// 3. PERFORMANCE FIX: Find closest artifact using straight-line distance FIRST!
+	// CRITICAL FIX: Clean out dead runners here as well
+	ActiveRunners.RemoveAll([](AMazeRunner *Val)
+							{ return !IsValid(Val); });
+
+	// 2. DISTRIBUTED TARGETING
+	for (AMazeRunner *Runner : ActiveRunners)
+	{
+		if (IsValid(Runner) && (Runner->CurrentState == EAIState::Hunting || Runner->CurrentState == EAIState::Idle))
+		{
+			AssignTargetToRunner(Runner);
+		}
+	}
+}
+
+void AOrchestrator::AssignTargetToRunner(AMazeRunner *Runner)
+{
+	if (!Runner || !Navigator || ActiveArtifacts.Num() == 0)
+		return;
+
+	// Clean out dead pointers safely
+	ActiveArtifacts.RemoveAll([](AStaticMeshActor *Val)
+							  { return !IsValid(Val); });
+	ActiveRunners.RemoveAll([](AMazeRunner *Val)
+							{ return !IsValid(Val); });
+
+	if (ActiveArtifacts.Num() == 0)
+		return;
+
+	APawn *PlayerPawn = GetWorld()->GetFirstPlayerController()->GetPawn();
+	FVector PlayerLoc = PlayerPawn ? PlayerPawn->GetActorLocation() : FVector::ZeroVector;
+	FVector RunnerLoc = Runner->GetActorLocation();
+
 	AStaticMeshActor *BestArtifact = nullptr;
-	float ClosestDistance = MAX_FLT; // Start with infinitely far away
-	FVector StartLoc = ActiveRunner->GetActorLocation();
+	float BestScore = -1.0f;
+	bool bEnforceReservations = (ActiveArtifacts.Num() >= ActiveRunners.Num());
 
 	for (AStaticMeshActor *Artifact : ActiveArtifacts)
 	{
-		// DistSquared is heavily optimized for CPUs because it skips calculating square roots!
-		float Dist = FVector::DistSquared(StartLoc, Artifact->GetActorLocation());
-		if (Dist < ClosestDistance)
+		if (!IsValid(Artifact))
+			continue;
+
+		bool bIsReserved = false;
+		bool bIsBeingCarried = false;
+
+		for (AMazeRunner *Other : ActiveRunners)
 		{
-			ClosestDistance = Dist;
+			if (IsValid(Other) && Other != Runner && Other->MyTarget == Artifact)
+			{
+				if (Other->CurrentState == EAIState::Escaping)
+				{
+					bIsBeingCarried = true;
+					break;
+				}
+				if (bEnforceReservations)
+				{
+					bIsReserved = true;
+				}
+			}
+		}
+
+		if (bIsBeingCarried || bIsReserved)
+			continue;
+
+		// Simple straight-line distance check
+		float DistToArt = FVector::Dist(RunnerLoc, Artifact->GetActorLocation());
+
+		// If player is sitting on the artifact, lower its score
+		float ThreatDist = FVector::Dist(Artifact->GetActorLocation(), PlayerLoc);
+		float ThreatPenalty = (ThreatDist < 600.0f) ? (600.0f - ThreatDist) * 10.0f : 0.0f;
+
+		float Score = 10000.0f / (DistToArt + ThreatPenalty + 1.0f);
+
+		if (Score > BestScore)
+		{
+			BestScore = Score;
 			BestArtifact = Artifact;
 		}
 	}
 
-	// 4. ONLY RUN A* EXACTLY ONCE FOR THE WINNING ARTIFACT
 	if (BestArtifact)
 	{
-		TArray<FVector> BestPath;
-
-		// We only calculate the maze path for the closest item
-		if (Navigator->FindPath(StartLoc, BestArtifact->GetActorLocation(), BestPath))
+		Runner->MyTarget = BestArtifact;
+		TArray<FVector> Path;
+		// Send ThreatRadius = 0 so A* never fails to find a path
+		if (Navigator->FindPath(RunnerLoc, BestArtifact->GetActorLocation(), Path, PlayerLoc, 0.0f) && Path.Num() > 0)
 		{
-			CurrentTargetArtifact = BestArtifact;
-
 			TArray<FVector> LocalPath;
-			FTransform SphereTransform = SphereActor->GetTransform();
-			for (const FVector &WorldPoint : BestPath)
-			{
-				LocalPath.Add(SphereTransform.InverseTransformPosition(WorldPoint));
-			}
-
-			ActiveRunner->SetPath(LocalPath, SphereActor);
+			FTransform SphereXform = SphereActor->GetTransform();
+			for (FVector P : Path)
+				LocalPath.Add(SphereXform.InverseTransformPosition(P));
+			Runner->SetPath(LocalPath, SphereActor);
 		}
 	}
 }
