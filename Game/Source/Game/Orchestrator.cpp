@@ -8,6 +8,8 @@
 #include "Components/InstancedStaticMeshComponent.h"
 #include "ProceduralMeshComponent.h"
 #include "Engine/StaticMeshActor.h"
+#include "Artifact/MazeArtifactManager.h"
+#include "Kismet/GameplayStatics.h"
 
 
 namespace
@@ -901,40 +903,65 @@ void AOrchestrator::BuildWallsFromMaze()
  */
 void AOrchestrator::BeginPlay()
 {
-	Super::BeginPlay();
+    Super::BeginPlay();
 
-	if (!SphereActor || !MazeRunnerClass || !MarkerMesh)
-		return;
+	EnsureMazeGenerated();
 
-	FActorSpawnParameters SpawnParams;
-	SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+    if (ArtifactManagerClass && !ArtifactManager && SphereActor && Maze)
+    {
+        FActorSpawnParameters ArtifactSpawnParams;
+        ArtifactSpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+        ArtifactSpawnParams.Owner = this;
 
-	FTransform StartTransform;
-	// Pick ONE random spot to spawn the Runner at the very beginning of the game
-	if (GetRandomSpawnTransform(StartTransform, 15.0f, 1, 5000, 1))
-	{
-		StartMarkerRef = GetWorld()->SpawnActor<AStaticMeshActor>(AStaticMeshActor::StaticClass(), StartTransform, SpawnParams);
-		if (StartMarkerRef)
-		{
-			StartMarkerRef->GetStaticMeshComponent()->SetMobility(EComponentMobility::Movable);
-			StartMarkerRef->AttachToActor(SphereActor, FAttachmentTransformRules::KeepWorldTransform);
-			StartMarkerRef->GetStaticMeshComponent()->SetStaticMesh(MarkerMesh);
-			if (StartMaterial)
-				StartMarkerRef->GetStaticMeshComponent()->SetMaterial(0, StartMaterial);
-			StartMarkerRef->SetActorScale3D(FVector(0.25f));
-		}
+        ArtifactManager = GetWorld()->SpawnActor<AMazeArtifactManager>(
+            ArtifactManagerClass,
+            GetActorLocation(),
+            FRotator::ZeroRotator,
+            ArtifactSpawnParams);
 
-		ActiveRunner = GetWorld()->SpawnActor<AMazeRunner>(MazeRunnerClass, StartTransform, SpawnParams);
-		if (ActiveRunner)
-		{
-			ActiveRunner->AttachToActor(SphereActor, FAttachmentTransformRules::KeepWorldTransform);
+        if (ArtifactManager)
+        {
+            ArtifactManager->Maze = Maze;
+            ArtifactManager->SphereActor = SphereActor;
+            ArtifactManager->PlayerPawn = UGameplayStatics::GetPlayerPawn(GetWorld(), 0);
 
-			// Hook up the ears! When it finishes a path, it runs our Brain function.
-			ActiveRunner->OnPathCompleted.AddDynamic(this, &AOrchestrator::OnRunnerReachedArtifact);
-		}
-	}
+            UE_LOG(LogTemp, Warning, TEXT("Spawned Artifact Manager from Orchestrator"));
+        }
+    }
+
+    if (!SphereActor || !MazeRunnerClass || !MarkerMesh)
+        return;
+
+    FActorSpawnParameters SpawnParams;
+    SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+
+    FTransform StartTransform;
+    if (GetRandomSpawnTransform(StartTransform, 15.0f, 1, 5000, 1))
+    {
+        StartMarkerRef = GetWorld()->SpawnActor<AStaticMeshActor>(AStaticMeshActor::StaticClass(), StartTransform, SpawnParams);
+        if (StartMarkerRef)
+        {
+            StartMarkerRef->GetStaticMeshComponent()->SetMobility(EComponentMobility::Movable);
+            StartMarkerRef->AttachToActor(SphereActor, FAttachmentTransformRules::KeepWorldTransform);
+            StartMarkerRef->GetStaticMeshComponent()->SetStaticMesh(MarkerMesh);
+            if (StartMaterial)
+                StartMarkerRef->GetStaticMeshComponent()->SetMaterial(0, StartMaterial);
+            StartMarkerRef->SetActorScale3D(FVector(0.25f));
+        }
+
+        ActiveRunner = GetWorld()->SpawnActor<AMazeRunner>(MazeRunnerClass, StartTransform, SpawnParams);
+        if (ActiveRunner)
+        {
+            ActiveRunner->AttachToActor(SphereActor, FAttachmentTransformRules::KeepWorldTransform);
+            ActiveRunner->OnPathCompleted.AddDynamic(this, &AOrchestrator::OnRunnerReachedArtifact);
+
+            if (ArtifactManager)
+            {
+                ArtifactManager->AIPawn = ActiveRunner;
+            }
+        }
+    }
 }
-
 /**
  * desc : Triggers the spawn of new artifacts on the maze and wakes up the AI to hunt them.
  * args : None
