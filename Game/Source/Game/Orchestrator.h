@@ -238,6 +238,10 @@ public:
 	UMaterialInterface *PathMaterial = nullptr;
 
 
+	/** Material applied to corner caps. If null, falls back to WallMaterial. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Orchestrator | Walls")
+	UMaterialInterface* CornerMaterial = nullptr;
+
 	UFUNCTION(BlueprintCallable, Category = "Orchestrator|Walls")
 	bool GetWallSegmentCentersWorld(
 		int32 Face,

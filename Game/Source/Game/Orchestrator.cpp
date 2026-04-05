@@ -85,7 +85,11 @@ AOrchestrator::AOrchestrator()
 			CornerHISM->SetStaticMesh(CornerMesh);
 		}
 
-		if (WallMaterial)
+		if (CornerMaterial)
+		{
+			CornerHISM->SetMaterial(0, CornerMaterial);
+		}
+		else if (WallMaterial)
 		{
 			CornerHISM->SetMaterial(0, WallMaterial);
 		}
@@ -606,7 +610,11 @@ void AOrchestrator::BuildWallsFromMaze()
 			CornerHISM->SetStaticMesh(CornerMesh);
 		}
 
-		if (WallMaterial)
+		if (CornerMaterial)
+		{
+			CornerHISM->SetMaterial(0, CornerMaterial);
+		}
+		else if (WallMaterial)
 		{
 			CornerHISM->SetMaterial(0, WallMaterial);
 		}
@@ -819,9 +827,13 @@ void AOrchestrator::BuildWallsFromMaze()
 	if (CornerHISM && CornerMesh && CornerHISM->GetStaticMesh())
 	{
 		const float CornerHeight = WallHeight + CornerHeightExtra;
+		const float CornerDiameterLocal = WallThickness * 1.0f;
 
-		const float CornerScaleXY = FMath::Max(0.01f, CornerDiameter / WallMeshBaseLength);
-		const float CornerScaleZ  = FMath::Max(0.01f, CornerHeight / WallMeshBaseLength);
+		const float CornerMeshBaseDiameter = 100.0f;
+		const float CornerMeshBaseHeight   = 100.0f;
+
+		const float CornerScaleXY = FMath::Max(0.01f, CornerDiameterLocal / CornerMeshBaseDiameter);
+		const float CornerScaleZ  = FMath::Max(0.01f, CornerHeight / CornerMeshBaseHeight);
 
 		for (const TPair<FString, FCornerAccum>& Pair : CornerMap)
 		{
@@ -849,7 +861,9 @@ void AOrchestrator::BuildWallsFromMaze()
 				continue;
 
 			const FVector Loc = Corner.Pos + Up * (CornerHeight * 0.5f + WallSurfaceOffset);
-			const FQuat Rot = FRotationMatrix::MakeFromZ(Up).ToQuat();
+			const FQuat BaseRot = FRotationMatrix::MakeFromZ(Up).ToQuat();
+			const FQuat FlipRot = FQuat(FVector::RightVector, PI);
+			const FQuat Rot = BaseRot * FlipRot;
 
 			FTransform T;
 			T.SetComponents(Rot, Loc, FVector(CornerScaleXY, CornerScaleXY, CornerScaleZ));
