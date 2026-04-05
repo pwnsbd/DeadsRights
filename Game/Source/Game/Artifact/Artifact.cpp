@@ -19,28 +19,23 @@ AArtifact::AArtifact()
 {
     PrimaryActorTick.bCanEverTick = true;
 
-    // Mesh
     MeshComponent = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("MeshComponent"));
     RootComponent = MeshComponent;
 
-    // Use a basic sphere mesh from the engine content
     static ConstructorHelpers::FObjectFinder<UStaticMesh> SphereMesh(TEXT("/Engine/BasicShapes/Sphere"));
     if (SphereMesh.Succeeded())
     {
         MeshComponent->SetStaticMesh(SphereMesh.Object);
     }
 
-    // Set default material (can be overridden in editor)
     MeshComponent->SetWorldScale3D(FVector(SphereRadius / 50.f));
     MeshComponent->SetSimulatePhysics(false);
-    MeshComponent->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+    MeshComponent->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
 
-    // Pickup Trigger
     PickupTrigger = CreateDefaultSubobject<USphereComponent>(TEXT("PickupTrigger"));
-    PickupTrigger->InitSphereRadius(100.f);
-    PickupTrigger->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+    PickupTrigger->InitSphereRadius(35.f);
+    PickupTrigger->SetCollisionEnabled(ECollisionEnabled::NoCollision);
     PickupTrigger->SetCollisionResponseToAllChannels(ECR_Ignore);
-    PickupTrigger->SetCollisionResponseToChannel(ECC_Pawn, ECR_Overlap);
     PickupTrigger->SetupAttachment(RootComponent);
 
     PickupTrigger->OnComponentBeginOverlap.AddDynamic(this, &AArtifact::OnOverlapBegin);
@@ -67,8 +62,21 @@ void AArtifact::Tick(float DeltaTime)
         Rot.Yaw += RotationSpeed * DeltaTime;
         SetActorRotation(Rot);
 
-        FVector Loc = InitialLocation;
-        Loc.Z += FMath::Sin(AccumulatedTime * FloatSpeed) * FloatAmplitude;
+        FVector FloatDir = FVector::UpVector;
+
+        if (SphereActor)
+        {
+            FloatDir = (InitialLocation - SphereActor->GetActorLocation()).GetSafeNormal();
+            if (FloatDir.IsNearlyZero())
+            {
+                FloatDir = FVector::UpVector;
+            }
+        }
+
+        const FVector Loc =
+            InitialLocation +
+            FloatDir * (FMath::Sin(AccumulatedTime * FloatSpeed) * FloatAmplitude);
+
         SetActorLocation(Loc);
     }
 }
@@ -77,16 +85,25 @@ void AArtifact::Tick(float DeltaTime)
 void AArtifact::SpawnAtRandomCell()
 {
     if (!Maze || !SphereActor)
+    {
         return;
+    }
 
-    int32 Face = FMath::RandRange(0, 5);
-    int32 X = FMath::RandRange(0, Maze->CellsPerFace - 1);
-    int32 Y = FMath::RandRange(0, Maze->CellsPerFace - 1);
+    const int32 Face = FMath::RandRange(0, 5);
+    const int32 X = FMath::RandRange(0, Maze->CellsPerFace - 1);
+    const int32 Y = FMath::RandRange(0, Maze->CellsPerFace - 1);
 
     CurrentCell = FMazeNode(Face, X, Y);
 
-    FVector SpawnLoc = SphereActor->GetCellCenterWorld(Face, X, Y);
+    const FVector CellCenter = SphereActor->GetCellCenterWorld(Face, X, Y);
+    const FVector SphereCenter = SphereActor->GetActorLocation();
+    const FVector UpDir = (CellCenter - SphereCenter).GetSafeNormal();
+
+    const FVector SpawnLoc = CellCenter + UpDir * IdleSurfaceOffset;
+    const FRotator SpawnRot = FRotationMatrix::MakeFromZ(UpDir).Rotator();
+
     SetActorLocation(SpawnLoc);
+    SetActorRotation(SpawnRot);
 
     InitialLocation = SpawnLoc;
 }
@@ -94,15 +111,38 @@ void AArtifact::SpawnAtRandomCell()
 // Handles pickup logic, attaching the artifact to the carrier
 void AArtifact::PickUp(AActor* NewCarrier)
 {
-    if (!NewCarrier) return;
+    if (!NewCarrier || bIsCarried)
+    {
+        return;
+    }
+
+    USceneComponent* CarrierRoot = NewCarrier->GetRootComponent();
+    if (!CarrierRoot)
+    {
+        return;
+    }
 
     bIsCarried = true;
     Carrier = NewCarrier;
 
+    PickupTrigger->SetCollisionEnabled(ECollisionEnabled::NoCollision);
     MeshComponent->SetSimulatePhysics(false);
     MeshComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 
-    AttachToActor(NewCarrier, FAttachmentTransformRules::SnapToTargetNotIncludingScale);
+    AttachToComponent(
+        CarrierRoot,
+        FAttachmentTransformRules::SnapToTargetNotIncludingScale);
+
+    SetActorRelativeLocation(CarriedHatOffset);
+    SetActorRelativeRotation(FRotator::ZeroRotator);
+    SetActorRelativeScale3D(CarriedHatScale);
+
+    if (SphereActor)
+    {
+        CurrentCell = SphereActor->WorldToMazeCell(NewCarrier->GetActorLocation());
+    }
+
+    UE_LOG(LogTemp, Warning, TEXT("Artifact picked up and attached as test hat"));
 }
 
 // Handles dropping the artifact, re-enabling physics and collision
@@ -275,11 +315,10 @@ void AArtifact::OnOverlapBegin(
     bool bFromSweep,
     const FHitResult& SweepResult)
 {
-    if (bIsCarried || !OtherActor)
-        return;
-
-    PickUp(OtherActor);
+    // Intentionally disabled for now.
+    // Pickup is handled by AMazeArtifactManager using maze-cell alignment.
 }
+
 
 // Phase Walk logic
 void AArtifact::ActivatePhaseWalk()

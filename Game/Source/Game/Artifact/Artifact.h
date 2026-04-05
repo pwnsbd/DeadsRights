@@ -55,6 +55,15 @@ public:
     UPROPERTY(BlueprintReadOnly, Category="Artifact")
     AActor* Carrier = nullptr; // The actor currently carrying the artifact (e.g., the player)
 
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Artifact|Test")
+    float IdleSurfaceOffset = 35.f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Artifact|Test")
+    FVector CarriedHatOffset = FVector(0.f, 0.f, 110.f);
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Artifact|Test")
+    FVector CarriedHatScale = FVector(0.35f, 0.35f, 0.35f);
+
     // ---------- Maze Integration ----------
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Artifact|Maze")
     UMaze* Maze = nullptr;
