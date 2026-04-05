@@ -50,8 +50,11 @@ public:
      * @param OutPath The generated array of safe step-by-step coordinates to follow.
      * @return True if a valid path was found, false if the destination is blocked or unreachable.
      */
+    // UFUNCTION(BlueprintCallable)
+    // bool FindPath(FVector StartPos, FVector EndPos, TArray<FVector> &OutPath);
+
     UFUNCTION(BlueprintCallable)
-    bool FindPath(FVector StartPos, FVector EndPos, TArray<FVector> &OutPath);
+    bool FindPath(FVector StartPos, FVector EndPos, TArray<FVector> &OutPath, FVector ThreatPos = FVector::ZeroVector, float ThreatRadius = 0.0f);
 
 private:
     // =========================================================================
