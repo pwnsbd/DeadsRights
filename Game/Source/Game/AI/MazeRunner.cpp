@@ -103,13 +103,13 @@ void AMazeRunner::Tick(float DeltaTime)
 	// --- 2. SURVIVAL LOGIC ---
 	if (CurrentState != EAIState::Escaping)
 	{
-		if (DistToPlayer < 500.0f && CurrentState != EAIState::Fleeing)
+		if (DistToPlayer < FleeThreshold && CurrentState != EAIState::Fleeing)
 		{
 			CurrentState = EAIState::Fleeing;
 			MyTarget = nullptr;
 			// Removed bIsMoving = false to prevent jitter!
 		}
-		else if (DistToPlayer > 800.0f && CurrentState == EAIState::Fleeing)
+		else if (DistToPlayer > SafeThreshold && CurrentState == EAIState::Fleeing)
 		{
 			CurrentState = EAIState::Hunting;
 			// Removed bIsMoving = false to prevent jitter!
@@ -143,7 +143,7 @@ void AMazeRunner::Tick(float DeltaTime)
 		}
 
 		// Linear penalty in MazeNavigator ensures it finds side corridors without freezing
-		if (Orchestrator->Navigator->FindPath(CurrentWorldLoc, TargetLoc, Path, PlayerLoc, 600.0f) && Path.Num() > 0)
+		if (Orchestrator->Navigator->FindPath(CurrentWorldLoc, TargetLoc, Path, PlayerLoc, PathAvoidanceRadius) && Path.Num() > 0)
 		{
 			TArray<FVector> LocalPath;
 			for (FVector P : Path)

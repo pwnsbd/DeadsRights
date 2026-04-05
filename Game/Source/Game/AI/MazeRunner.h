@@ -57,6 +57,18 @@ protected:
 
 	void SetAIColor(FLinearColor NewColor);
 
+	/** Distance at which the AI begins to flee. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AI")
+	float FleeThreshold = 300.0f;
+
+	/** Distance at which the AI feels safe enough to stop fleeing. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AI")
+	float SafeThreshold = 500.0f;
+
+	/** Radius used by the pathfinder to avoid the player. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AI")
+	float PathAvoidanceRadius = 400.0f;
+
 private:
 	TArray<FVector> PathToFollow;
 	int32 CurrentTargetIndex = 0;
