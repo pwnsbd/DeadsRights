@@ -5,6 +5,7 @@
 #include "AI/MazeNavigator.h"
 #include "Components/ChildActorComponent.h"
 #include "ProceduralMeshComponent.h"
+#include "Engine/StaticMeshActor.h"
 #include "Orchestrator.generated.h"
 
 class ACubeToSphere;
