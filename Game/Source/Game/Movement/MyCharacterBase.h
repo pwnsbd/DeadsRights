@@ -6,6 +6,8 @@
 #include "InputActionValue.h"
 #include "InputMappingContext.h"
 #include "../Maze/MazeTypes.h"
+#include "../Artifact/Artifact.h"
+
 #include "MyCharacterBase.generated.h"
 
 class AOrchestrator;
@@ -15,7 +17,30 @@ class UCapsuleComponent;
 class UStaticMeshComponent;
 class UCameraComponent;
 class UInputComponent;
+class AArtifact;
 
+USTRUCT(BlueprintType)
+	struct FArtifactSlot
+	{
+		GENERATED_BODY()
+
+		UPROPERTY(VisibleAnywhere, Category="Artifacts")
+		EArtifactType ArtifactType = EArtifactType::None;
+
+		UPROPERTY(VisibleAnywhere, Category="Artifacts")
+		FString ArtifactName = TEXT("Empty");
+
+		UPROPERTY(VisibleAnywhere, Category="Artifacts")
+		float CooldownDuration = 0.f;
+
+		UPROPERTY(VisibleAnywhere, Category="Artifacts")
+		float NextUsableTime = 0.f;
+
+		bool IsEmpty() const
+		{
+			return ArtifactType == EArtifactType::None;
+		}
+	};
 /**
  * AMyCharacterBase
  *
@@ -115,6 +140,30 @@ protected:
 
 	// ---- Misc ----
 	bool FindClosestCell(const FVector& WorldPos, int32& OutFace, int32& OutX, int32& OutY) const;
+
+
+	// ===== ARTIFACT INVENTORY =====
+	UPROPERTY(EditAnywhere, Category="Artifacts")
+	int32 MaxArtifacts = 4;
+
+	UPROPERTY(VisibleAnywhere, Category="Artifacts")
+	TArray<FArtifactSlot> InventoryArtifacts;
+
+	float InventoryLogTimer = 0.f;
+
+public:
+	// FUNCTIONS
+	bool AddArtifactToInventory(AArtifact* Artifact);
+	void UseArtifactInSlot(int32 SlotIndex);
+	void LogInventoryState(const TCHAR* Context) const;
+
+	// INPUT HELPERS
+	void UseArtifactSlot1();
+	void UseArtifactSlot2();
+	void UseArtifactSlot3();
+	void UseArtifactSlot4();
+	
+	EArtifactType ArtifactType = EArtifactType::None;
 
 	// =========================================================================
 	// Components (cached from Blueprint)
@@ -232,6 +281,8 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Debug")
 	bool bShowCameraDebug = false;
 
+
+	
 	// =========================================================================
 	// Private state
 	// =========================================================================

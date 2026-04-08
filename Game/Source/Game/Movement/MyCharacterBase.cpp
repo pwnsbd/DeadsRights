@@ -14,6 +14,8 @@
 #include "../Conversion/CubeToSphere.h"
 #include "../Maze/Maze.h"
 
+#include "../Artifact/Artifact.h"
+
 // =============================================================================
 // Anonymous helpers
 // =============================================================================
@@ -84,6 +86,7 @@ void AMyCharacterBase::CacheCharacterComponents()
 void AMyCharacterBase::BeginPlay()
 {
 	Super::BeginPlay();
+	InventoryArtifacts.SetNumZeroed(MaxArtifacts);
 	CacheCharacterComponents();
 	RefreshAfterMazeRebuild();
 }
@@ -137,6 +140,12 @@ void AMyCharacterBase::SetupPlayerInputComponent(UInputComponent* PlayerInputCom
 		if (IA_Look)
 			EIC->BindAction(IA_Look, ETriggerEvent::Triggered, this, &AMyCharacterBase::HandleLookInput);
 	}
+
+	//Artifact Triggers!!!!
+	InputComponent->BindKey(EKeys::One, IE_Pressed, this, &AMyCharacterBase::UseArtifactSlot1);
+	InputComponent->BindKey(EKeys::Two, IE_Pressed, this, &AMyCharacterBase::UseArtifactSlot2);
+	InputComponent->BindKey(EKeys::Three, IE_Pressed, this, &AMyCharacterBase::UseArtifactSlot3);
+	InputComponent->BindKey(EKeys::Four, IE_Pressed, this, &AMyCharacterBase::UseArtifactSlot4);
 }
 
 // =============================================================================
@@ -799,3 +808,149 @@ void AMyCharacterBase::DumpAllMazeFacesAscii() const
 		DumpMazeFaceAscii(F);
 	}
 }
+bool AMyCharacterBase::AddArtifactToInventory(AArtifact* Artifact)
+{
+    if (!Artifact)
+    {
+        return false;
+    }
+
+    int32 FreeSlot = INDEX_NONE;
+
+    for (int32 i = 0; i < InventoryArtifacts.Num(); ++i)
+    {
+        if (InventoryArtifacts[i].IsEmpty())
+        {
+            FreeSlot = i;
+            break;
+        }
+    }
+
+    if (FreeSlot == INDEX_NONE)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("Inventory FULL"));
+        LogInventoryState(TEXT("FULL"));
+        return false;
+    }
+
+	FArtifactSlot& Slot = InventoryArtifacts[FreeSlot];
+
+	
+	Slot.ArtifactType = Artifact->ArtifactType;
+	Slot.NextUsableTime = 0.f;
+
+
+	switch (Artifact->ArtifactType)
+	{
+	case EArtifactType::Beam:
+		Slot.ArtifactName = TEXT("Red Beam");
+		Slot.CooldownDuration = 3.0f;
+		break;
+
+	case EArtifactType::PhaseWalk:
+		Slot.ArtifactName = TEXT("Green Phase Walk");
+		Slot.CooldownDuration = 6.0f;
+		break;
+
+	case EArtifactType::PathFinder:
+		Slot.ArtifactName = TEXT("Yellow Path Finder");
+		Slot.CooldownDuration = 8.0f;
+		break;
+
+	case EArtifactType::Barrier:
+		Slot.ArtifactName = TEXT("Blue Barrier");
+		Slot.CooldownDuration = 10.0f;
+		break;
+
+	default:
+		Slot.ArtifactName = TEXT("Unknown Artifact");
+		Slot.CooldownDuration = 5.0f;
+		break;
+	}
+
+    Artifact->bIsCarried = true;
+    Artifact->Carrier = this;
+    Artifact->Destroy();
+
+    UE_LOG(LogTemp, Warning,
+        TEXT("Picked up %s into slot %d"),
+        *Slot.ArtifactName,
+        FreeSlot + 1);
+
+    LogInventoryState(TEXT("After Pickup"));
+    return true;
+}
+
+void AMyCharacterBase::UseArtifactInSlot(int32 SlotIndex)
+{
+    if (!InventoryArtifacts.IsValidIndex(SlotIndex))
+    {
+        UE_LOG(LogTemp, Warning, TEXT("No artifact slot %d"), SlotIndex + 1);
+        return;
+    }
+
+    FArtifactSlot& Slot = InventoryArtifacts[SlotIndex];
+
+    if (Slot.IsEmpty())
+    {
+        UE_LOG(LogTemp, Warning, TEXT("Slot %d is empty"), SlotIndex + 1);
+        return;
+    }
+
+    const float CurrentTime = GetWorld()->GetTimeSeconds();
+
+    if (CurrentTime < Slot.NextUsableTime)
+    {
+        const float Remaining = Slot.NextUsableTime - CurrentTime;
+
+        UE_LOG(LogTemp, Warning,
+            TEXT("%s in slot %d is on cooldown for %.2f more seconds"),
+            *Slot.ArtifactName,
+            SlotIndex + 1,
+            Remaining);
+
+        return;
+    }
+
+    UE_LOG(LogTemp, Warning,
+        TEXT("USED %s in slot %d"),
+        *Slot.ArtifactName,
+        SlotIndex + 1);
+
+    Slot.NextUsableTime = CurrentTime + Slot.CooldownDuration;
+
+    LogInventoryState(TEXT("After Use"));
+}
+
+void AMyCharacterBase::LogInventoryState(const TCHAR* Context) const
+{
+    FString Out = FString::Printf(TEXT("[Inventory %s] "), Context);
+
+    const float CurrentTime = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.f;
+
+    for (int32 i = 0; i < InventoryArtifacts.Num(); i++)
+    {
+        const FArtifactSlot& Slot = InventoryArtifacts[i];
+
+        if (Slot.IsEmpty())
+        {
+            Out += FString::Printf(TEXT("[Slot %d: Empty] "), i + 1);
+            continue;
+        }
+
+        const float Remaining = FMath::Max(0.f, Slot.NextUsableTime - CurrentTime);
+
+        Out += FString::Printf(
+            TEXT("[Slot %d: %s CD=%.2f] "),
+            i + 1,
+            *Slot.ArtifactName,
+            Remaining);
+    }
+
+    UE_LOG(LogTemp, Warning, TEXT("%s"), *Out);
+}
+
+void AMyCharacterBase::UseArtifactSlot1() { UseArtifactInSlot(0); }
+void AMyCharacterBase::UseArtifactSlot2() { UseArtifactInSlot(1); }
+void AMyCharacterBase::UseArtifactSlot3() { UseArtifactInSlot(2); }
+void AMyCharacterBase::UseArtifactSlot4() { UseArtifactInSlot(3); }

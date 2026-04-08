@@ -13,7 +13,7 @@
 #include "Components/SphereComponent.h"
 #include "UObject/ConstructorHelpers.h"
 #include "DrawDebugHelpers.h"
-#include "../Movement/GridMazePawn.h"
+#include "../Movement/MyCharacterBase.h"
 
 
 // Sets default values
@@ -122,9 +122,9 @@ void AArtifact::PickUp(AActor* NewCarrier)
 
     UE_LOG(LogTemp, Warning, TEXT("Trying GridMazePawn cast"));
 
-    if (AGridMazePawn* GridPawn = Cast<AGridMazePawn>(NewCarrier))
+    if (AMyCharacterBase* Char = Cast<AMyCharacterBase>(NewCarrier))
     {
-        if (!GridPawn->AddArtifactToInventory(this))
+        if (!Char->AddArtifactToInventory(this))
         {
             UE_LOG(LogTemp, Warning, TEXT("Artifact pickup failed because inventory is full"));
             return;
