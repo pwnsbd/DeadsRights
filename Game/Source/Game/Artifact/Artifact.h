@@ -95,6 +95,9 @@ public:
     UFUNCTION(BlueprintCallable, Category="Artifact|Ability")
     void ActivateAbilityFromNode(const FMazeNode& StartNode, EMazeDir Direction); // More direct control, used for testing and potential future AI use
 
+    UFUNCTION(BlueprintCallable, Category="Artifact|Visual")
+    void ApplyDebugVisuals();
+
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Artifact|Ability")
     int32 MaxCharges = 2; // Maximum number of times the artifact can be used before depletion
 

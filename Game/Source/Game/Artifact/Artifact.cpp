@@ -13,6 +13,8 @@
 #include "Components/SphereComponent.h"
 #include "UObject/ConstructorHelpers.h"
 #include "DrawDebugHelpers.h"
+#include "../Movement/GridMazePawn.h"
+
 
 // Sets default values
 AArtifact::AArtifact()
@@ -115,34 +117,38 @@ void AArtifact::PickUp(AActor* NewCarrier)
     {
         return;
     }
+    UE_LOG(LogTemp, Warning, TEXT("PickUp called with carrier class = %s"), *GetNameSafe(NewCarrier->GetClass()));
 
-    USceneComponent* CarrierRoot = NewCarrier->GetRootComponent();
-    if (!CarrierRoot)
+
+    UE_LOG(LogTemp, Warning, TEXT("Trying GridMazePawn cast"));
+
+    if (AGridMazePawn* GridPawn = Cast<AGridMazePawn>(NewCarrier))
     {
+        if (!GridPawn->AddArtifactToInventory(this))
+        {
+            UE_LOG(LogTemp, Warning, TEXT("Artifact pickup failed because inventory is full"));
+            return;
+        }
+
+        UE_LOG(LogTemp, Warning, TEXT("Artifact routed into GridMazePawn inventory"));
         return;
+    }
+
+    else
+    {
+        UE_LOG(LogTemp, Warning, TEXT("Carrier is NOT AGridMazePawn, using fallback attach path"));
     }
 
     bIsCarried = true;
     Carrier = NewCarrier;
 
-    PickupTrigger->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-    MeshComponent->SetSimulatePhysics(false);
-    MeshComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-
-    AttachToComponent(
-        CarrierRoot,
-        FAttachmentTransformRules::SnapToTargetNotIncludingScale);
-
-    SetActorRelativeLocation(CarriedHatOffset);
-    SetActorRelativeRotation(FRotator::ZeroRotator);
-    SetActorRelativeScale3D(CarriedHatScale);
-
-    if (SphereActor)
+    if (MeshComponent)
     {
-        CurrentCell = SphereActor->WorldToMazeCell(NewCarrier->GetActorLocation());
+        MeshComponent->SetSimulatePhysics(false);
+        MeshComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
     }
 
-    UE_LOG(LogTemp, Warning, TEXT("Artifact picked up and attached as test hat"));
+    AttachToActor(NewCarrier, FAttachmentTransformRules::SnapToTargetNotIncludingScale);
 }
 
 // Handles dropping the artifact, re-enabling physics and collision
@@ -211,28 +217,35 @@ void AArtifact::ActivateAbility()
 // More direct ability activation, used for testing and potential future AI use
 void AArtifact::ActivateAbilityFromNode(const FMazeNode& StartNode, EMazeDir Direction)
 {
-    if (!Maze) return;
+    if (!Maze)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("ActivateAbilityFromNode failed because Maze is null"));
+        return;
+    }
 
     switch (ArtifactType)
     {
     case EArtifactType::Beam:
-        FireBeam(StartNode, Direction);
+        UE_LOG(LogTemp, Warning, TEXT("[ARTIFACT] RED / BEAM used from Face=%d X=%d Y=%d"), StartNode.Face, StartNode.X, StartNode.Y);
         break;
 
     case EArtifactType::PhaseWalk:
-        ActivatePhaseWalk();
+        UE_LOG(LogTemp, Warning, TEXT("[ARTIFACT] GREEN / PHASE WALK used from Face=%d X=%d Y=%d"), StartNode.Face, StartNode.X, StartNode.Y);
         break;
 
     case EArtifactType::PathFinder:
-        ActivatePathFinder();
+        UE_LOG(LogTemp, Warning, TEXT("[ARTIFACT] YELLOW / PATH FINDER used from Face=%d X=%d Y=%d"), StartNode.Face, StartNode.X, StartNode.Y);
         break;
 
     case EArtifactType::Barrier:
-        ActivateBarrier();
+        UE_LOG(LogTemp, Warning, TEXT("[ARTIFACT] BLUE / BARRIER used from Face=%d X=%d Y=%d"), StartNode.Face, StartNode.X, StartNode.Y);
+        break;
+
+    default:
+        UE_LOG(LogTemp, Warning, TEXT("[ARTIFACT] NONE used"));
         break;
     }
 }
-
 // Core logic for firing the beam, called by ActivateAbilityFromNode
 void AArtifact::FireBeam(const FMazeNode& StartNode, EMazeDir Direction)
 {
@@ -504,4 +517,31 @@ void AArtifact::DestroyBarrier()
     }
 
     BarrierWalls.Empty();
+}
+
+void AArtifact::ApplyDebugVisuals()
+{
+    if (!MeshComponent)
+    {
+        return;
+    }
+
+    FLinearColor Color = FLinearColor::White;
+
+    switch (ArtifactType)
+    {
+    case EArtifactType::Beam:        Color = FLinearColor::Red; break;
+    case EArtifactType::PhaseWalk:   Color = FLinearColor::Green; break;
+    case EArtifactType::PathFinder:  Color = FLinearColor::Yellow; break;
+    case EArtifactType::Barrier:     Color = FLinearColor::Blue; break;
+    default: break;
+    }
+
+    UMaterialInstanceDynamic* MID = MeshComponent->CreateAndSetMaterialInstanceDynamic(0);
+
+    if (MID)
+    {
+        MID->SetVectorParameterValue(TEXT("BaseColor"), Color);
+        MID->SetVectorParameterValue(TEXT("Color"), Color);
+    }
 }

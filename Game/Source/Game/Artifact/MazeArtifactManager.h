@@ -54,6 +54,7 @@ public:
 private:
     void ResolveReferences();
     bool IsCellUsed(const FMazeNode& Cell) const;
+    bool bHasSpawnedArtifacts = false;
 
 private:
     TArray<FMazeNode> UsedCells;

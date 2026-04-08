@@ -595,12 +595,6 @@ namespace
  */
 void AOrchestrator::BuildWallsFromMaze()
 {
-	UE_LOG(LogTemp, Warning,
-	TEXT("CORNER SETUP CornerHISM=%s CornerMesh=%s HISMStaticMesh=%s UseProcedural=%s"),
-	CornerHISM ? TEXT("VALID") : TEXT("NULL"),
-	CornerMesh ? *GetNameSafe(CornerMesh) : TEXT("NULL"),
-	(CornerHISM && CornerHISM->GetStaticMesh()) ? *GetNameSafe(CornerHISM->GetStaticMesh()) : TEXT("NULL"),
-	bUseProceduralWalls ? TEXT("true") : TEXT("false"));
 
 	if (CornerHISM)
 	{
@@ -756,11 +750,6 @@ void AOrchestrator::BuildWallsFromMaze()
 			Found->Dirs.Add(AlongEdge.GetSafeNormal());
 		}
 
-		UE_LOG(LogTemp, Warning,
-		TEXT("AddCornerSample P=%s Dir=%s Key=%s"),
-		*P.ToString(),
-		*AlongEdge.GetSafeNormal().ToString(),
-		*Key);
 	};
 
 	Vertices.Reserve(N * N * 6 * 8);
@@ -841,20 +830,14 @@ void AOrchestrator::BuildWallsFromMaze()
 		{
 			const FCornerAccum& Corner = Pair.Value;
 
-			UE_LOG(LogTemp, Warning,
-				TEXT("CORNER CHECK Pos=%s Dirs=%d"),
-				*Corner.Pos.ToString(),
-				Corner.Dirs.Num());
 
 			if (Corner.Dirs.Num() < 2)
 			{
-				UE_LOG(LogTemp, Warning, TEXT("CORNER SKIP not enough dirs"));
 				continue;
 			}
 
 			if (!HasNonCollinearPair(Corner.Dirs))
 			{
-				UE_LOG(LogTemp, Warning, TEXT("CORNER SKIP collinear"));
 				continue;
 			}
 
@@ -872,12 +855,6 @@ void AOrchestrator::BuildWallsFromMaze()
 
 			if (T.IsValid())
 			{
-				UE_LOG(LogTemp, Warning,
-				TEXT("CORNER SPAWN Loc=%s ScaleXY=%.3f ScaleZ=%.3f"),
-				*Loc.ToString(),
-				CornerScaleXY,
-				CornerScaleZ);
-
 				CornerHISM->AddInstance(T);
 			}
 		}
