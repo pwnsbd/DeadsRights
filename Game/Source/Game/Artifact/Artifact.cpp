@@ -13,34 +13,31 @@
 #include "Components/SphereComponent.h"
 #include "UObject/ConstructorHelpers.h"
 #include "DrawDebugHelpers.h"
+#include "../Movement/MyCharacterBase.h"
+
 
 // Sets default values
 AArtifact::AArtifact()
 {
     PrimaryActorTick.bCanEverTick = true;
 
-    // Mesh
     MeshComponent = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("MeshComponent"));
     RootComponent = MeshComponent;
 
-    // Use a basic sphere mesh from the engine content
     static ConstructorHelpers::FObjectFinder<UStaticMesh> SphereMesh(TEXT("/Engine/BasicShapes/Sphere"));
     if (SphereMesh.Succeeded())
     {
         MeshComponent->SetStaticMesh(SphereMesh.Object);
     }
 
-    // Set default material (can be overridden in editor)
     MeshComponent->SetWorldScale3D(FVector(SphereRadius / 50.f));
     MeshComponent->SetSimulatePhysics(false);
-    MeshComponent->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+    MeshComponent->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
 
-    // Pickup Trigger
     PickupTrigger = CreateDefaultSubobject<USphereComponent>(TEXT("PickupTrigger"));
-    PickupTrigger->InitSphereRadius(100.f);
-    PickupTrigger->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+    PickupTrigger->InitSphereRadius(35.f);
+    PickupTrigger->SetCollisionEnabled(ECollisionEnabled::NoCollision);
     PickupTrigger->SetCollisionResponseToAllChannels(ECR_Ignore);
-    PickupTrigger->SetCollisionResponseToChannel(ECC_Pawn, ECR_Overlap);
     PickupTrigger->SetupAttachment(RootComponent);
 
     PickupTrigger->OnComponentBeginOverlap.AddDynamic(this, &AArtifact::OnOverlapBegin);
@@ -67,8 +64,21 @@ void AArtifact::Tick(float DeltaTime)
         Rot.Yaw += RotationSpeed * DeltaTime;
         SetActorRotation(Rot);
 
-        FVector Loc = InitialLocation;
-        Loc.Z += FMath::Sin(AccumulatedTime * FloatSpeed) * FloatAmplitude;
+        FVector FloatDir = FVector::UpVector;
+
+        if (SphereActor)
+        {
+            FloatDir = (InitialLocation - SphereActor->GetActorLocation()).GetSafeNormal();
+            if (FloatDir.IsNearlyZero())
+            {
+                FloatDir = FVector::UpVector;
+            }
+        }
+
+        const FVector Loc =
+            InitialLocation +
+            FloatDir * (FMath::Sin(AccumulatedTime * FloatSpeed) * FloatAmplitude);
+
         SetActorLocation(Loc);
     }
 }
@@ -77,16 +87,25 @@ void AArtifact::Tick(float DeltaTime)
 void AArtifact::SpawnAtRandomCell()
 {
     if (!Maze || !SphereActor)
+    {
         return;
+    }
 
-    int32 Face = FMath::RandRange(0, 5);
-    int32 X = FMath::RandRange(0, Maze->CellsPerFace - 1);
-    int32 Y = FMath::RandRange(0, Maze->CellsPerFace - 1);
+    const int32 Face = FMath::RandRange(0, 5);
+    const int32 X = FMath::RandRange(0, Maze->CellsPerFace - 1);
+    const int32 Y = FMath::RandRange(0, Maze->CellsPerFace - 1);
 
     CurrentCell = FMazeNode(Face, X, Y);
 
-    FVector SpawnLoc = SphereActor->GetCellCenterWorld(Face, X, Y);
+    const FVector CellCenter = SphereActor->GetCellCenterWorld(Face, X, Y);
+    const FVector SphereCenter = SphereActor->GetActorLocation();
+    const FVector UpDir = (CellCenter - SphereCenter).GetSafeNormal();
+
+    const FVector SpawnLoc = CellCenter + UpDir * IdleSurfaceOffset;
+    const FRotator SpawnRot = FRotationMatrix::MakeFromZ(UpDir).Rotator();
+
     SetActorLocation(SpawnLoc);
+    SetActorRotation(SpawnRot);
 
     InitialLocation = SpawnLoc;
 }
@@ -94,13 +113,40 @@ void AArtifact::SpawnAtRandomCell()
 // Handles pickup logic, attaching the artifact to the carrier
 void AArtifact::PickUp(AActor* NewCarrier)
 {
-    if (!NewCarrier) return;
+    if (!NewCarrier || bIsCarried)
+    {
+        return;
+    }
+    UE_LOG(LogTemp, Warning, TEXT("PickUp called with carrier class = %s"), *GetNameSafe(NewCarrier->GetClass()));
+
+
+    UE_LOG(LogTemp, Warning, TEXT("Trying GridMazePawn cast"));
+
+    if (AMyCharacterBase* Char = Cast<AMyCharacterBase>(NewCarrier))
+    {
+        if (!Char->AddArtifactToInventory(this))
+        {
+            UE_LOG(LogTemp, Warning, TEXT("Artifact pickup failed because inventory is full"));
+            return;
+        }
+
+        UE_LOG(LogTemp, Warning, TEXT("Artifact routed into GridMazePawn inventory"));
+        return;
+    }
+
+    else
+    {
+        UE_LOG(LogTemp, Warning, TEXT("Carrier is NOT AGridMazePawn, using fallback attach path"));
+    }
 
     bIsCarried = true;
     Carrier = NewCarrier;
 
-    MeshComponent->SetSimulatePhysics(false);
-    MeshComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+    if (MeshComponent)
+    {
+        MeshComponent->SetSimulatePhysics(false);
+        MeshComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+    }
 
     AttachToActor(NewCarrier, FAttachmentTransformRules::SnapToTargetNotIncludingScale);
 }
@@ -171,28 +217,35 @@ void AArtifact::ActivateAbility()
 // More direct ability activation, used for testing and potential future AI use
 void AArtifact::ActivateAbilityFromNode(const FMazeNode& StartNode, EMazeDir Direction)
 {
-    if (!Maze) return;
+    if (!Maze)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("ActivateAbilityFromNode failed because Maze is null"));
+        return;
+    }
 
     switch (ArtifactType)
     {
     case EArtifactType::Beam:
-        FireBeam(StartNode, Direction);
+        UE_LOG(LogTemp, Warning, TEXT("[ARTIFACT] RED / BEAM used from Face=%d X=%d Y=%d"), StartNode.Face, StartNode.X, StartNode.Y);
         break;
 
     case EArtifactType::PhaseWalk:
-        ActivatePhaseWalk();
+        UE_LOG(LogTemp, Warning, TEXT("[ARTIFACT] GREEN / PHASE WALK used from Face=%d X=%d Y=%d"), StartNode.Face, StartNode.X, StartNode.Y);
         break;
 
     case EArtifactType::PathFinder:
-        ActivatePathFinder();
+        UE_LOG(LogTemp, Warning, TEXT("[ARTIFACT] YELLOW / PATH FINDER used from Face=%d X=%d Y=%d"), StartNode.Face, StartNode.X, StartNode.Y);
         break;
 
     case EArtifactType::Barrier:
-        ActivateBarrier();
+        UE_LOG(LogTemp, Warning, TEXT("[ARTIFACT] BLUE / BARRIER used from Face=%d X=%d Y=%d"), StartNode.Face, StartNode.X, StartNode.Y);
+        break;
+
+    default:
+        UE_LOG(LogTemp, Warning, TEXT("[ARTIFACT] NONE used"));
         break;
     }
 }
-
 // Core logic for firing the beam, called by ActivateAbilityFromNode
 void AArtifact::FireBeam(const FMazeNode& StartNode, EMazeDir Direction)
 {
@@ -275,11 +328,10 @@ void AArtifact::OnOverlapBegin(
     bool bFromSweep,
     const FHitResult& SweepResult)
 {
-    if (bIsCarried || !OtherActor)
-        return;
-
-    PickUp(OtherActor);
+    // Intentionally disabled for now.
+    // Pickup is handled by AMazeArtifactManager using maze-cell alignment.
 }
+
 
 // Phase Walk logic
 void AArtifact::ActivatePhaseWalk()
@@ -465,4 +517,31 @@ void AArtifact::DestroyBarrier()
     }
 
     BarrierWalls.Empty();
+}
+
+void AArtifact::ApplyDebugVisuals()
+{
+    if (!MeshComponent)
+    {
+        return;
+    }
+
+    FLinearColor Color = FLinearColor::White;
+
+    switch (ArtifactType)
+    {
+    case EArtifactType::Beam:        Color = FLinearColor::Red; break;
+    case EArtifactType::PhaseWalk:   Color = FLinearColor::Green; break;
+    case EArtifactType::PathFinder:  Color = FLinearColor::Yellow; break;
+    case EArtifactType::Barrier:     Color = FLinearColor::Blue; break;
+    default: break;
+    }
+
+    UMaterialInstanceDynamic* MID = MeshComponent->CreateAndSetMaterialInstanceDynamic(0);
+
+    if (MID)
+    {
+        MID->SetVectorParameterValue(TEXT("BaseColor"), Color);
+        MID->SetVectorParameterValue(TEXT("Color"), Color);
+    }
 }

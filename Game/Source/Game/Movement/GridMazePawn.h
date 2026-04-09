@@ -16,6 +16,7 @@ class UMaze;
 class UCapsuleComponent;
 class UFloatingPawnMovement;
 class AOrchestrator;
+class AArtifact;
 
 UCLASS()
 class GAME_API AGridMazePawn : public APawn
@@ -132,6 +133,29 @@ public:
 	UPROPERTY(VisibleAnywhere)
 	UCameraComponent* Camera;
 
+
+
+
+	public:
+		UFUNCTION(BlueprintCallable, Category="Artifacts")
+		bool AddArtifactToInventory(AArtifact* Artifact);
+
+		UFUNCTION(BlueprintCallable, Category="Artifacts")
+		bool UseArtifactInSlot(int32 SlotIndex);
+
+		UFUNCTION(BlueprintPure, Category="Artifacts")
+		int32 GetArtifactCount() const;
+
+	private:
+		void UseArtifactSlot1();
+		void UseArtifactSlot2();
+		void UseArtifactSlot3();
+		void UseArtifactSlot4();
+
+		void UpdateArtifactCarryVisuals();
+		void LogInventoryState(const TCHAR* Context) const;
+		int32 FindFirstEmptyArtifactSlot() const;
+		
 private:
 	UPROPERTY(VisibleAnywhere, Category="Grid")
 	int32 Face = 0;
@@ -141,6 +165,23 @@ private:
 
 	UPROPERTY(VisibleAnywhere, Category="Grid")
 	int32 Y = 0;
+
+	UPROPERTY(EditAnywhere, Category="Artifacts")
+	int32 MaxArtifacts = 4;
+
+	UPROPERTY(EditAnywhere, Category="Artifacts")
+	FVector ArtifactCarryBaseOffset = FVector(0.f, 0.f, 120.f);
+
+	UPROPERTY(EditAnywhere, Category="Artifacts")
+	float ArtifactCarrySpacing = 35.f;
+
+	UPROPERTY(EditAnywhere, Category="Artifacts")
+	FVector ArtifactCarryScale = FVector(0.35f, 0.35f, 0.35f);
+
+	UPROPERTY(VisibleAnywhere, Category="Artifacts")
+	TArray<TObjectPtr<AArtifact>> InventoryArtifacts;
+
+	float InventoryLogTimer = 0.f;
 
 	int32 GetPoleWedge(int32 InX, int32 InY) const;
 	EMazeDir RemapPoleInput(EMazeDir BaseDir) const;
