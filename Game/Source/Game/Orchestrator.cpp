@@ -10,6 +10,7 @@
 #include "Engine/StaticMeshActor.h"
 #include "Artifact/MazeArtifactManager.h"
 #include "Kismet/GameplayStatics.h"
+#include "Movement/MyCharacterBase.h"
 
 
 namespace
@@ -939,6 +940,13 @@ void AOrchestrator::BeginPlay()
 void AOrchestrator::TriggerNextRun()
 {
 	RuntimeSeedOffset += 100;
+
+	// Advance wave index on the player's storage component so pickups this wave are tagged correctly.
+	if (AMyCharacterBase* PC = Cast<AMyCharacterBase>(UGameplayStatics::GetPlayerPawn(GetWorld(), 0)))
+	{
+		if (PC->StorageComponent)
+			PC->StorageComponent->CurrentWaveIndex++;
+	}
 
 	// FIX: Check if the array has any runners instead of looking for a single 'ActiveRunner'
 	if (!SphereActor || !MarkerMesh || ActiveRunners.Num() == 0)
