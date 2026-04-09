@@ -7,82 +7,78 @@
 class UStaticMeshComponent;
 class ACubeToSphere;
 
-/**
- * desc : Delegate signature for when the AI runner successfully finishes navigating its current path.
- */
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnPathCompletedSignature);
 
-/**
- * AMazeRunner
- * Job: Acts as the persistent AI agent that navigates the sphere maze.
- * - Receives local-space paths from the Orchestrator.
- * - Mathematically hugs the spherical surface while moving.
- * - Broadcasts an event when it reaches its destination to request a new target.
- */
+UENUM(BlueprintType)
+enum class EAIState : uint8
+{
+	Idle,
+	Hunting,
+	Fleeing,
+	Escaping,
+	Casting
+};
+
 UCLASS()
 class GAME_API AMazeRunner : public AActor
 {
 	GENERATED_BODY()
 
 public:
-	// =========================================================
-	// Functions (Public)
-	// =========================================================
-
-	/**
-	 * desc : Default constructor. Initializes the mesh component and sets default scale.
-	 * args : None
-	 * result: None
-	 */
 	AMazeRunner();
-
-	/**
-	 * desc : Called every frame. Handles local space movement, spherical surface alignment, and waypoint tracking.
-	 * args : DeltaTime - The time elapsed since the last frame.
-	 * result: None
-	 */
 	virtual void Tick(float DeltaTime) override;
-
-	/**
-	 * desc : Hands the calculated local-space path to the AI so it can begin moving.
-	 * args :
-	 * - NewLocalPath: Array of waypoints relative to the sphere's local space (center 0,0,0).
-	 * - InSphereActor: Pointer to the spherical planet so the runner can track it.
-	 * result: None
-	 */
 	void SetPath(const TArray<FVector> &NewLocalPath, ACubeToSphere *InSphereActor);
 
-	// =========================================================
-	// Events & Components (Public)
-	// =========================================================
-
-	/** Event dispatcher triggered when the runner reaches the final waypoint in its path. */
 	UPROPERTY(BlueprintAssignable)
 	FOnPathCompletedSignature OnPathCompleted;
 
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly)
+	EAIState CurrentState = EAIState::Hunting;
+
+	UPROPERTY()
+	class AStaticMeshActor *MyTarget = nullptr;
+
+	FTimerHandle EscapeTimerHandle;
+
+	void FinishEscape();
+	virtual void NotifyActorBeginOverlap(AActor *OtherActor) override;
+
 protected:
-	/** The visual representation of the runner. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	UStaticMeshComponent *MeshComp;
 
-	/** How fast the runner moves along the path (Units per second). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement")
-	float MovementSpeed = 300.0f;
+	float MovementSpeed = 150.0f;
+
+	virtual void BeginPlay() override;
+
+	UPROPERTY()
+	class UMaterialInstanceDynamic *DynamicMat;
+
+	void SetAIColor(FLinearColor NewColor);
+
+	/** Distance at which the AI begins to flee. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AI")
+	float FleeThreshold = 300.0f;
+
+	/** Distance at which the AI feels safe enough to stop fleeing. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AI")
+	float SafeThreshold = 500.0f;
+
+	/** Radius used by the pathfinder to avoid the player. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AI")
+	float PathAvoidanceRadius = 400.0f;
 
 private:
-	// =========================================================
-	// Internal State (Private)
-	// =========================================================
-
-	/** The current path the runner is following, mapped in local space. */
 	TArray<FVector> PathToFollow;
-
-	/** The index of the specific waypoint the runner is currently walking towards. */
 	int32 CurrentTargetIndex = 0;
-
-	/** State flag controlling whether the Tick function should process movement. */
 	bool bIsMoving = false;
-
-	/** Pointer to the active sphere planet. Used to validate references. */
 	ACubeToSphere *TargetSphere = nullptr;
+	// --- ADD THIS LINE TO FIX THE ERROR ---
+	/** Tracks the player's last known location to dynamically update paths. */
+	FVector LastPlayerPosForPath = FVector::ZeroVector;
+	/** * Finds the index of the node in the new path that is closest to our current
+	 * physical location so we don't "snap" backwards when recalculating.
+	 */
+	int32 FindClosestPathIndex(const TArray<FVector> &NewPath);
 };

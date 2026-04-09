@@ -5,6 +5,7 @@
 #include "AI/MazeNavigator.h"
 #include "Components/ChildActorComponent.h"
 #include "ProceduralMeshComponent.h"
+#include "Engine/StaticMeshActor.h"
 #include "Orchestrator.generated.h"
 
 class ACubeToSphere;
@@ -96,7 +97,7 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Orchestrator | AI")
 	void TriggerNextRun();
 
-	UMaze* GetMaze() const { return Maze; }
+	UMaze *GetMaze() const { return Maze; }
 
 	/**
 	 * desc : Brain function bound to the AI Runner's delegate. Calculates shortest distance to
@@ -122,8 +123,18 @@ public:
 	TSubclassOf<class AMazeRunner> MazeRunnerClass;
 
 	/** Pointer to ensure we only ever spawn and manage ONE character */
+	// UPROPERTY()
+	// AMazeRunner *ActiveRunner = nullptr;
+
+	/** We now track multiple runners. */
 	UPROPERTY()
-	AMazeRunner *ActiveRunner = nullptr;
+	TArray<AMazeRunner *> ActiveRunners;
+
+	/** Finds the node on the sphere furthest from the player's current position. */
+	FVector GetFarthestNodeFromActor(AActor *TargetActor);
+
+	/** Assigns a unique artifact to a runner. */
+	void AssignTargetToRunner(AMazeRunner *Runner);
 
 	/** Mesh used to mark the Start and End points of the path. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Orchestrator | AI")
@@ -162,6 +173,10 @@ public:
 	/** The starting spawn point reference. */
 	UPROPERTY()
 	AStaticMeshActor *StartMarkerRef = nullptr;
+
+	/** Called automatically when the player touches an artifact. */
+	UFUNCTION()
+	void OnArtifactOverlapped(AActor *OverlappedActor, AActor *OtherActor);
 
 	// ---------- Sphere / Refs ----------
 

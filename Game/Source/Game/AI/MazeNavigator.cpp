@@ -58,7 +58,7 @@ TArray<FMazeNode> UMazeNavigator::GetNeighbors(const FMazeNode &Node) const
 // A* Pathfinding Algorithm
 // =========================================================================
 
-bool UMazeNavigator::FindPath(FVector StartPos, FVector EndPos, TArray<FVector> &OutPath)
+bool UMazeNavigator::FindPath(FVector StartPos, FVector EndPos, TArray<FVector> &OutPath, FVector ThreatPos, float ThreatRadius)
 {
     if (!Maze || !Sphere)
     {
@@ -139,7 +139,26 @@ bool UMazeNavigator::FindPath(FVector StartPos, FVector EndPos, TArray<FVector> 
 
         for (const FMazeNode &Next : Neighbors)
         {
-            float newCost = CostSoFar[CurrentNode] + 1.0f; // Uniform cost for grid movement
+
+            float StepCost = 1.0f;
+
+            // IN MAZENAVIGATOR.CPP (Inside the For-Loop of FindPath):
+
+            // --- FEATURE 1: BALANCED THREAT PATHFINDING ---
+            // --- FEATURE 1: BALANCED THREAT PATHFINDING ---
+            if (ThreatRadius > 0.0f)
+            {
+                FVector NodeLoc = Sphere->GetCellCenterWorld(Next.Face, Next.X, Next.Y);
+                float DistToThreat = FVector::Dist(NodeLoc, ThreatPos);
+
+                if (DistToThreat < ThreatRadius)
+                {
+                    // Linear penalty is better than Exponential for preventing freezes
+                    StepCost += (ThreatRadius - DistToThreat) * 0.5f;
+                }
+            }
+
+            float newCost = CostSoFar[CurrentNode] + StepCost; // Uniform cost for grid movement
 
             // If we haven't visited this neighbor, or we found a shorter path to it
             if (!CostSoFar.Contains(Next) || newCost < CostSoFar[Next])
@@ -147,7 +166,6 @@ bool UMazeNavigator::FindPath(FVector StartPos, FVector EndPos, TArray<FVector> 
                 CostSoFar.Add(Next, newCost);
                 CameFrom.Add(Next, CurrentNode);
 
-                // Add to the open set if not already there
                 if (!OpenSet.Contains(Next))
                 {
                     OpenSet.HeapPush(Next, CompareNodes);
