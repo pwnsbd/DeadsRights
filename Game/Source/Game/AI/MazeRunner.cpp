@@ -2,7 +2,7 @@
 #include "Components/StaticMeshComponent.h"
 #include "../Conversion/CubeToSphere.h"
 #include "../Orchestrator.h"
-#include "Engine/StaticMeshActor.h"
+#include "../Artifact/Artifact.h"
 #include "GameFramework/Pawn.h"
 #include "MazeNavigator.h"
 
@@ -199,10 +199,10 @@ void AMazeRunner::NotifyActorBeginOverlap(AActor *OtherActor)
 	{
 		GetWorldTimerManager().ClearTimer(EscapeTimerHandle);
 
-		// If we are killed while holding the artifact, drop it safely
+		// If we are killed while holding the artifact, drop it back onto the sphere
 		if (MyTarget && CurrentState == EAIState::Escaping)
 		{
-			AStaticMeshActor *DroppedArtifact = MyTarget;
+			AArtifact* DroppedArtifact = MyTarget;
 			MyTarget = nullptr;
 
 			DroppedArtifact->DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);
@@ -212,6 +212,8 @@ void AMazeRunner::NotifyActorBeginOverlap(AActor *OtherActor)
 			DroppedArtifact->SetActorLocation(GetActorLocation());
 			DroppedArtifact->SetActorHiddenInGame(false);
 			DroppedArtifact->SetActorEnableCollision(true);
+			DroppedArtifact->bIsCarried = false;
+			DroppedArtifact->Carrier = nullptr;
 		}
 
 		this->Destroy();
@@ -224,14 +226,13 @@ void AMazeRunner::FinishEscape()
 
 	if (MyTarget)
 	{
-		if (Orchestrator)
-			Orchestrator->ActiveArtifacts.Remove(MyTarget);
 		MyTarget->Destroy();
 		MyTarget = nullptr;
 
-		UE_LOG(LogTemp, Warning, TEXT("AI stole artifact!"));
-		if (GEngine)
-			GEngine->AddOnScreenDebugMessage(-1, 5.0f, FColor::Cyan, TEXT("AI stole artifact!"));
+		UE_LOG(LogTemp, Log, TEXT("[MazeRunner] AI successfully escaped with an artifact!"));
+
+		if (Orchestrator)
+			Orchestrator->OnArtifactStolen.Broadcast();
 	}
 
 	SetAIColor(FLinearColor::Green);

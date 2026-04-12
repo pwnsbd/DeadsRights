@@ -129,11 +129,19 @@ public:
 	// Bridge: converts AArtifact data into a generic FStoredItem and hands it to StorageComponent.
 	bool AddArtifactToInventory(AArtifact* Artifact);
 
+	// Freeze / unfreeze all player input (used by LevelManager during countdown).
+	UPROPERTY(BlueprintReadWrite, Category = "Input")
+	bool bInputFrozen = false;
+
 	// INPUT HELPERS
 	void UseArtifactSlot1();
 	void UseArtifactSlot2();
 	void UseArtifactSlot3();
 	void UseArtifactSlot4();
+
+private:
+	// Shared logic: checks cooldown, activates ability, clears slot if depleted.
+	void ActivateArtifactInSlot(int32 SlotIndex);
 
 	// =========================================================================
 	// Components (cached from Blueprint)

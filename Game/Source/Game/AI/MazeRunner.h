@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
+#include "../Artifact/Artifact.h"
 #include "MazeRunner.generated.h"
 
 class UStaticMeshComponent;
@@ -36,7 +37,7 @@ public:
 	EAIState CurrentState = EAIState::Hunting;
 
 	UPROPERTY()
-	class AStaticMeshActor *MyTarget = nullptr;
+	AArtifact* MyTarget = nullptr;
 
 	FTimerHandle EscapeTimerHandle;
 

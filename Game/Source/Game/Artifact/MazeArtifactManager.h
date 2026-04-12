@@ -27,6 +27,23 @@ public:
     UFUNCTION(BlueprintCallable, Category="Artifacts")
     void ClearArtifacts();
 
+    /** Clears all artifacts and resets internal state so SpawnArtifacts() can be called again. */
+    UFUNCTION(BlueprintCallable, Category="Artifacts")
+    void ResetForNextLevel();
+
+    /** Returns how many artifact actors are still alive in the world (not yet collected or escaped). */
+    UFUNCTION(BlueprintPure, Category="Artifacts")
+    int32 GetRemainingArtifactCount() const;
+
+    /** When true, Tick will NOT auto-spawn artifacts — GameLevelManager owns spawning.
+     *  Defaults to true so placed instances never auto-spawn; LevelManager sets this
+     *  explicitly before calling SpawnArtifacts(). */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Artifacts")
+    bool bManagedExternally = true;
+
+    /** Read-only access to spawned artifacts — used by Orchestrator for AI targeting. */
+    const TArray<TObjectPtr<AArtifact>>& GetSpawnedArtifacts() const { return SpawnedArtifacts; }
+
     UPROPERTY(EditAnywhere, Category="Artifacts")
     TSubclassOf<AArtifact> ArtifactClass;
 

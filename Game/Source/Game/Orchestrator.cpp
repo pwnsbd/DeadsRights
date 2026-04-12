@@ -9,6 +9,7 @@
 #include "ProceduralMeshComponent.h"
 #include "Engine/StaticMeshActor.h"
 #include "Artifact/MazeArtifactManager.h"
+#include "Artifact/Artifact.h"
 #include "Kismet/GameplayStatics.h"
 #include "Movement/MyCharacterBase.h"
 
@@ -907,22 +908,31 @@ void AOrchestrator::BeginPlay()
         }
     }
 
+	if (!bManagedByLevelManager)
+	{
+		SpawnRunners(2);
+	}
+}
+
+void AOrchestrator::SpawnRunners(int32 Count)
+{
+	if (!SphereActor || !MazeRunnerClass) return;
+
 	FActorSpawnParameters SpawnParams;
 	SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
 	SpawnParams.Owner = this;
 
-	for (int32 i = 0; i < 2; i++)
+	for (int32 i = 0; i < Count; i++)
 	{
 		FTransform SpawnTransform;
-		if (GetRandomSpawnTransform(SpawnTransform, 15.0f, 1, 5000, 10 + i))
+		if (GetRandomSpawnTransform(SpawnTransform, 15.0f, 1, 5000, 10 + i + RuntimeSeedOffset))
 		{
-			AMazeRunner *NewRunner = GetWorld()->SpawnActor<AMazeRunner>(MazeRunnerClass, SpawnTransform, SpawnParams);
+			AMazeRunner* NewRunner = GetWorld()->SpawnActor<AMazeRunner>(MazeRunnerClass, SpawnTransform, SpawnParams);
 			if (NewRunner)
 			{
 				NewRunner->AttachToActor(SphereActor, FAttachmentTransformRules::KeepWorldTransform);
 				NewRunner->OnPathCompleted.AddDynamic(this, &AOrchestrator::OnRunnerReachedArtifact);
 				ActiveRunners.Add(NewRunner);
-				AssignTargetToRunner(NewRunner);
 			}
 		}
 	}
@@ -931,6 +941,8 @@ void AOrchestrator::BeginPlay()
 	{
 		ArtifactManager->AIPawn = ActiveRunners[0];
 	}
+
+	UE_LOG(LogTemp, Log, TEXT("[Orchestrator] SpawnRunners: spawned %d / %d requested"), ActiveRunners.Num(), Count);
 }
 /**
  * desc : Triggers the spawn of new artifacts on the maze and wakes up the AI to hunt them.
@@ -1027,52 +1039,17 @@ FVector AOrchestrator::GetFarthestNodeFromActor(AActor *TargetActor)
 
 void AOrchestrator::OnArtifactOverlapped(AActor *OverlappedActor, AActor *OtherActor)
 {
-	// If the player touches the artifact
-	if (OtherActor && OtherActor->IsA(APawn::StaticClass()))
-	{
-		AStaticMeshActor *Artifact = Cast<AStaticMeshActor>(OverlappedActor);
-		if (Artifact && ActiveArtifacts.Contains(Artifact))
-		{
-			ActiveArtifacts.Remove(Artifact);
-			Artifact->Destroy();
-
-			// CRITICAL FIX: Aggressively remove dead AI pointers before looping!
-			ActiveRunners.RemoveAll([](AMazeRunner *Val)
-									{ return !IsValid(Val); });
-
-			// Tell any surviving AI that was hunting this specific artifact to pick a new one
-			for (AMazeRunner *Runner : ActiveRunners)
-			{
-				// Added IsValid safety check just in case
-				if (IsValid(Runner) && Runner->MyTarget == Artifact)
-				{
-					Runner->MyTarget = nullptr;
-					AssignTargetToRunner(Runner);
-				}
-			}
-		}
-	}
+	// Pickup is now handled by MazeArtifactManager::Tick (cell alignment detection).
+	// This callback was used by the old AStaticMeshActor system and is no longer active.
 }
 
 void AOrchestrator::OnRunnerReachedArtifact()
 {
-	// 1. Artifact Cleanup
-	if (CurrentTargetArtifact)
-	{
-		ActiveArtifacts.Remove(CurrentTargetArtifact);
-		CurrentTargetArtifact->Destroy();
-		CurrentTargetArtifact = nullptr;
-	}
+	// Clean stale runner pointers
+	ActiveRunners.RemoveAll([](AMazeRunner* Val) { return !IsValid(Val); });
 
-	if (ActiveArtifacts.IsEmpty())
-		return;
-
-	// CRITICAL FIX: Clean out dead runners here as well
-	ActiveRunners.RemoveAll([](AMazeRunner *Val)
-							{ return !IsValid(Val); });
-
-	// 2. DISTRIBUTED TARGETING
-	for (AMazeRunner *Runner : ActiveRunners)
+	// Redistribute targets — assign to every runner that is idle or hunting
+	for (AMazeRunner* Runner : ActiveRunners)
 	{
 		if (IsValid(Runner) && (Runner->CurrentState == EAIState::Hunting || Runner->CurrentState == EAIState::Idle))
 		{
@@ -1081,37 +1058,37 @@ void AOrchestrator::OnRunnerReachedArtifact()
 	}
 }
 
-void AOrchestrator::AssignTargetToRunner(AMazeRunner *Runner)
+void AOrchestrator::AssignTargetToRunner(AMazeRunner* Runner)
 {
-	if (!Runner || !Navigator || ActiveArtifacts.Num() == 0)
-		return;
+	if (!Runner)   { UE_LOG(LogTemp, Warning, TEXT("[AssignTarget] Runner is null")); return; }
+	if (!Navigator){ UE_LOG(LogTemp, Warning, TEXT("[AssignTarget] Navigator is null")); return; }
+	if (!ArtifactManager){ UE_LOG(LogTemp, Warning, TEXT("[AssignTarget] ArtifactManager is null")); return; }
 
-	// Clean out dead pointers safely
-	ActiveArtifacts.RemoveAll([](AStaticMeshActor *Val)
-							  { return !IsValid(Val); });
-	ActiveRunners.RemoveAll([](AMazeRunner *Val)
-							{ return !IsValid(Val); });
+	const auto& Artifacts = ArtifactManager->GetSpawnedArtifacts();
+	if (Artifacts.Num() == 0) { UE_LOG(LogTemp, Warning, TEXT("[AssignTarget] No artifacts in ArtifactManager")); return; }
 
-	if (ActiveArtifacts.Num() == 0)
-		return;
+	ActiveRunners.RemoveAll([](AMazeRunner* Val) { return !IsValid(Val); });
 
-	APawn *PlayerPawn = GetWorld()->GetFirstPlayerController()->GetPawn();
+	APawn* PlayerPawn = GetWorld()->GetFirstPlayerController()->GetPawn();
 	FVector PlayerLoc = PlayerPawn ? PlayerPawn->GetActorLocation() : FVector::ZeroVector;
 	FVector RunnerLoc = Runner->GetActorLocation();
 
-	AStaticMeshActor *BestArtifact = nullptr;
+	AArtifact* BestArtifact = nullptr;
 	float BestScore = -1.0f;
-	bool bEnforceReservations = (ActiveArtifacts.Num() >= ActiveRunners.Num());
+	bool bEnforceReservations = (Artifacts.Num() >= ActiveRunners.Num());
 
-	for (AStaticMeshActor *Artifact : ActiveArtifacts)
+	for (const TObjectPtr<AArtifact>& ArtPtr : Artifacts)
 	{
-		if (!IsValid(Artifact))
-			continue;
+		AArtifact* Artifact = ArtPtr.Get();
+		if (!IsValid(Artifact)) continue;
+
+		// Skip artifacts already collected by player or hidden by another AI
+		if (Artifact->bIsCarried || Artifact->IsHidden()) continue;
 
 		bool bIsReserved = false;
 		bool bIsBeingCarried = false;
 
-		for (AMazeRunner *Other : ActiveRunners)
+		for (AMazeRunner* Other : ActiveRunners)
 		{
 			if (IsValid(Other) && Other != Runner && Other->MyTarget == Artifact)
 			{
@@ -1121,22 +1098,15 @@ void AOrchestrator::AssignTargetToRunner(AMazeRunner *Runner)
 					break;
 				}
 				if (bEnforceReservations)
-				{
 					bIsReserved = true;
-				}
 			}
 		}
 
-		if (bIsBeingCarried || bIsReserved)
-			continue;
+		if (bIsBeingCarried || bIsReserved) continue;
 
-		// Simple straight-line distance check
 		float DistToArt = FVector::Dist(RunnerLoc, Artifact->GetActorLocation());
-
-		// If player is sitting on the artifact, lower its score
 		float ThreatDist = FVector::Dist(Artifact->GetActorLocation(), PlayerLoc);
 		float ThreatPenalty = (ThreatDist < 600.0f) ? (600.0f - ThreatDist) * 10.0f : 0.0f;
-
 		float Score = 10000.0f / (DistToArt + ThreatPenalty + 1.0f);
 
 		if (Score > BestScore)
@@ -1150,7 +1120,6 @@ void AOrchestrator::AssignTargetToRunner(AMazeRunner *Runner)
 	{
 		Runner->MyTarget = BestArtifact;
 		TArray<FVector> Path;
-		// Send ThreatRadius = 0 so A* never fails to find a path
 		if (Navigator->FindPath(RunnerLoc, BestArtifact->GetActorLocation(), Path, PlayerLoc, 0.0f) && Path.Num() > 0)
 		{
 			TArray<FVector> LocalPath;
@@ -1158,6 +1127,15 @@ void AOrchestrator::AssignTargetToRunner(AMazeRunner *Runner)
 			for (FVector P : Path)
 				LocalPath.Add(SphereXform.InverseTransformPosition(P));
 			Runner->SetPath(LocalPath, SphereActor);
+			UE_LOG(LogTemp, Log, TEXT("[AssignTarget] Runner assigned path (%d nodes) to artifact"), Path.Num());
 		}
+		else
+		{
+			UE_LOG(LogTemp, Warning, TEXT("[AssignTarget] FindPath FAILED for runner to artifact"));
+		}
+	}
+	else
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[AssignTarget] No valid artifact found for runner"));
 	}
 }

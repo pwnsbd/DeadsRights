@@ -269,6 +269,7 @@ FTransform AMyCharacterBase::PlaceOnCell(int32 InFace, int32 InX, int32 InY)
 
 void AMyCharacterBase::HandleMoveInput(const FInputActionValue& Value)
 {
+	if (bInputFrozen) return;
 	const FVector2D Axis = Value.Get<FVector2D>(); // X = right (D/A), Y = forward (W/S)
 	if (Axis.IsNearlyZero()) return;
 
@@ -334,6 +335,7 @@ void AMyCharacterBase::HandleMoveReleased(const FInputActionValue& /*Value*/)
 
 void AMyCharacterBase::HandleLookInput(const FInputActionValue& Value)
 {
+	if (bInputFrozen) return;
 	const FVector2D Delta = Value.Get<FVector2D>(); // X = horizontal, Y = vertical
 	if (Delta.IsNearlyZero()) return;
 
@@ -842,16 +844,33 @@ bool AMyCharacterBase::AddArtifactToInventory(AArtifact* Artifact)
 		break;
 	}
 
+	Item.SourceActor = Artifact;
+
 	if (StorageComponent->AddItem(Item) == INDEX_NONE)
 		return false;
 
+	// Keep the actor alive but invisible — ability activation needs it
 	Artifact->bIsCarried = true;
 	Artifact->Carrier    = this;
-	Artifact->Destroy();
+	Artifact->SetActorHiddenInGame(true);
+	Artifact->SetActorEnableCollision(false);
 	return true;
 }
 
-void AMyCharacterBase::UseArtifactSlot1() { StorageComponent->UseSlot(0); }
-void AMyCharacterBase::UseArtifactSlot2() { StorageComponent->UseSlot(1); }
-void AMyCharacterBase::UseArtifactSlot3() { StorageComponent->UseSlot(2); }
-void AMyCharacterBase::UseArtifactSlot4() { StorageComponent->UseSlot(3); }
+void AMyCharacterBase::ActivateArtifactInSlot(int32 SlotIndex)
+{
+	if (!StorageComponent || !StorageComponent->Slots.IsValidIndex(SlotIndex)) return;
+
+	// UseSlot handles cooldown — returns false if on cooldown or slot is empty
+	if (!StorageComponent->UseSlot(SlotIndex)) return;
+
+	AArtifact* Artifact = Cast<AArtifact>(StorageComponent->Slots[SlotIndex].SourceActor);
+	if (!IsValid(Artifact)) return;
+
+	Artifact->ActivateAbility();
+}
+
+void AMyCharacterBase::UseArtifactSlot1() { ActivateArtifactInSlot(0); }
+void AMyCharacterBase::UseArtifactSlot2() { ActivateArtifactInSlot(1); }
+void AMyCharacterBase::UseArtifactSlot3() { ActivateArtifactInSlot(2); }
+void AMyCharacterBase::UseArtifactSlot4() { ActivateArtifactInSlot(3); }

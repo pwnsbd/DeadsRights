@@ -15,6 +15,10 @@ void UItemStorageComponent::BeginPlay()
 
 int32 UItemStorageComponent::AddItem(const FStoredItem& Item)
 {
+	// Lazy init — guard against BeginPlay ordering issues
+	if (Slots.Num() == 0 && MaxSlots > 0)
+		Slots.SetNum(MaxSlots);
+
 	for (int32 i = 0; i < Slots.Num(); ++i)
 	{
 		if (Slots[i].IsEmpty())
@@ -74,8 +78,22 @@ void UItemStorageComponent::ClearSlot(int32 SlotIndex)
 	{
 		UE_LOG(LogTemp, Log, TEXT("[ItemStorage] Cleared slot %d ('%s')"),
 			SlotIndex, *Slots[SlotIndex].ItemName);
+		if (IsValid(Slots[SlotIndex].SourceActor))
+			Slots[SlotIndex].SourceActor->Destroy();
 		Slots[SlotIndex] = FStoredItem{};
 	}
+}
+
+void UItemStorageComponent::ClearAllSlots()
+{
+	for (int32 i = 0; i < Slots.Num(); ++i)
+	{
+		if (IsValid(Slots[i].SourceActor))
+			Slots[i].SourceActor->Destroy();
+		Slots[i] = FStoredItem{};
+	}
+
+	UE_LOG(LogTemp, Log, TEXT("[ItemStorage] All slots cleared (game loss reset)."));
 }
 
 // ---- Query / Stats ----------------------------------------------------------
