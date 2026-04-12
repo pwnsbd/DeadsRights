@@ -40,7 +40,6 @@ void AMazeArtifactManager::BeginPlay()
 {
     Super::BeginPlay();
 
-    UE_LOG(LogTemp, Warning, TEXT("ArtifactManager BeginPlay HIT"));
 }
 
 void AMazeArtifactManager::Tick(float DeltaSeconds)
@@ -51,20 +50,12 @@ void AMazeArtifactManager::Tick(float DeltaSeconds)
 
     if (!bHasSpawnedArtifacts)
     {
+        // LevelManager owns spawning when bManagedExternally — skip auto-spawn
+        if (bManagedExternally) return;
+
         if (ArtifactClass && Maze && SphereActor)
         {
-            UE_LOG(LogTemp, Warning, TEXT("All refs valid, spawning artifacts now"));
             SpawnArtifacts();
-            bHasSpawnedArtifacts = true;
-        }
-        else
-        {
-            UE_LOG(LogTemp, Warning,
-                TEXT("Waiting for refs  ArtifactClass=%s Maze=%s SphereActor=%s PlayerPawn=%s"),
-                ArtifactClass ? TEXT("VALID") : TEXT("NULL"),
-                Maze ? TEXT("VALID") : TEXT("NULL"),
-                SphereActor ? TEXT("VALID") : TEXT("NULL"),
-                PlayerPawn ? TEXT("VALID") : TEXT("NULL"));
         }
 
         return;
@@ -74,11 +65,7 @@ void AMazeArtifactManager::Tick(float DeltaSeconds)
     {
         PlayerPawn = UGameplayStatics::GetPlayerPawn(GetWorld(), 0);
 
-        if (PlayerPawn)
-        {
-            UE_LOG(LogTemp, Warning, TEXT("Resolved PlayerPawn"));
         }
-    }
 
     if (!SphereActor || !PlayerPawn)
     {
@@ -122,17 +109,10 @@ void AMazeArtifactManager::ResolveReferences()
 
         // Pull Maze
         if (!Maze && Orch->GetMaze())
-        {
             Maze = Orch->GetMaze();
-            UE_LOG(LogTemp, Warning, TEXT("Resolved Maze from Orchestrator"));
-        }
 
-        // Pull Sphere  
         if (!SphereActor && Orch->SphereActor)
-        {
             SphereActor = Orch->SphereActor;
-            UE_LOG(LogTemp, Warning, TEXT("Resolved SphereActor from Orchestrator"));
-        }
 
         break;
     }
@@ -143,7 +123,6 @@ void AMazeArtifactManager::ResolveReferences()
         for (TActorIterator<ACubeToSphere> It(GetWorld()); It; ++It)
         {
             SphereActor = *It;
-            UE_LOG(LogTemp, Warning, TEXT("Found SphereActor directly in world"));
             break;
         }
     }
@@ -176,24 +155,36 @@ void AMazeArtifactManager::ClearArtifacts()
     UsedCells.Empty();
 }
 
+void AMazeArtifactManager::ResetForNextLevel()
+{
+    ClearArtifacts();
+    bHasSpawnedArtifacts = false;
+    UE_LOG(LogTemp, Log, TEXT("[ArtifactManager] Reset for next level."));
+}
+
+int32 AMazeArtifactManager::GetRemainingArtifactCount() const
+{
+    int32 Count = 0;
+    for (const AArtifact* Artifact : SpawnedArtifacts)
+    {
+        if (IsValid(Artifact) && !Artifact->bIsCarried)
+            Count++;
+    }
+    return Count;
+}
+
 void AMazeArtifactManager::SpawnArtifacts()
 {
-
-    UE_LOG(LogTemp, Warning, TEXT("SpawnArtifacts START"));
-    UE_LOG(LogTemp, Warning, TEXT("ArtifactClass=%s"), ArtifactClass ? TEXT("VALID") : TEXT("NULL"));
-    UE_LOG(LogTemp, Warning, TEXT("Maze=%s"), Maze ? TEXT("VALID") : TEXT("NULL"));
-    UE_LOG(LogTemp, Warning, TEXT("SphereActor=%s"), SphereActor ? TEXT("VALID") : TEXT("NULL"));
-    UE_LOG(LogTemp, Warning, TEXT("PlayerPawn=%s"), PlayerPawn ? TEXT("VALID") : TEXT("NULL"));
 
     ClearArtifacts();
     ResolveReferences();
 
     if (!ArtifactClass || !Maze || !SphereActor)
     {
-        UE_LOG(LogTemp, Warning, TEXT("SpawnArtifacts EARLY RETURN"));
-        UE_LOG(LogTemp, Warning, TEXT("ArtifactClass=%s"), ArtifactClass ? TEXT("VALID") : TEXT("NULL"));
-        UE_LOG(LogTemp, Warning, TEXT("Maze=%s"), Maze ? TEXT("VALID") : TEXT("NULL"));
-        UE_LOG(LogTemp, Warning, TEXT("SphereActor=%s"), SphereActor ? TEXT("VALID") : TEXT("NULL"));
+        UE_LOG(LogTemp, Warning, TEXT("[ArtifactManager] SpawnArtifacts: missing refs (ArtifactClass=%s Maze=%s SphereActor=%s)"),
+            ArtifactClass ? TEXT("OK") : TEXT("NULL"),
+            Maze          ? TEXT("OK") : TEXT("NULL"),
+            SphereActor   ? TEXT("OK") : TEXT("NULL"));
         return;
     }
 
@@ -290,4 +281,8 @@ void AMazeArtifactManager::SpawnArtifacts()
             TEXT("Spawned Artifact  Face=%d X=%d Y=%d"),
             SpawnCell.Face, SpawnCell.X, SpawnCell.Y);
     }
+
+    // Mark as spawned so Tick proceeds to pickup detection regardless of who called us
+    bHasSpawnedArtifacts = true;
+    UE_LOG(LogTemp, Log, TEXT("[ArtifactManager] Spawned %d artifacts."), SpawnedArtifacts.Num());
 }

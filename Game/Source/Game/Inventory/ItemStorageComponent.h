@@ -66,6 +66,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Inventory")
 	void ClearSlot(int32 SlotIndex);
 
+	// Clears all slots — called on game loss to reset the player's inventory.
+	UFUNCTION(BlueprintCallable, Category = "Inventory")
+	void ClearAllSlots();
+
 	// ---- Query / Stats API --------------------------------------------
 
 	// Total items ever picked up (lifetime, never resets).

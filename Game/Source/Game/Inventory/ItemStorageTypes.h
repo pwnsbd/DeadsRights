@@ -2,6 +2,8 @@
 #include "CoreMinimal.h"
 #include "ItemStorageTypes.generated.h"
 
+class AActor;
+
 // Generic item category tag.
 // Values intentionally match EArtifactType in Artifact.h so
 // AddArtifactToInventory() can static_cast between them safely.
@@ -36,6 +38,11 @@ struct GAME_API FStoredItem
 	// Stamped from UItemStorageComponent::CurrentWaveIndex at the time of pickup.
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Inventory")
 	int32 WaveIndex = 0;
+
+	// The artifact actor kept alive (hidden) in the world so its ability can be activated on use.
+	// Destroyed when the slot is cleared (depleted, dropped, or game reset).
+	UPROPERTY()
+	TObjectPtr<AActor> SourceActor = nullptr;
 
 	bool IsEmpty() const { return ItemCategory == EItemCategory::None; }
 };

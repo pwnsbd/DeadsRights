@@ -25,6 +25,9 @@ class AMazeArtifactManager;
  * - Builds wall instances using Maze + Sphere mapping
  * - Manages the AI Runner and Artifact spawning logic
  */
+/** Broadcast by FinishEscape when an AI successfully steals an artifact. */
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnArtifactStolenSignature);
+
 UCLASS()
 class GAME_API AOrchestrator : public AActor
 {
@@ -130,6 +133,14 @@ public:
 	UPROPERTY()
 	TArray<AMazeRunner *> ActiveRunners;
 
+	/** When true, BeginPlay skips runner spawning — GameLevelManager owns that responsibility. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Orchestrator | AI")
+	bool bManagedByLevelManager = false;
+
+	/** Spawns Count runners at random cells and registers them with the Orchestrator. */
+	UFUNCTION(BlueprintCallable, Category = "Orchestrator | AI")
+	void SpawnRunners(int32 Count);
+
 	/** Finds the node on the sphere furthest from the player's current position. */
 	FVector GetFarthestNodeFromActor(AActor *TargetActor);
 
@@ -177,6 +188,10 @@ public:
 	/** Called automatically when the player touches an artifact. */
 	UFUNCTION()
 	void OnArtifactOverlapped(AActor *OverlappedActor, AActor *OtherActor);
+
+	/** Fired when an AI successfully escapes with an artifact (10s timer). */
+	UPROPERTY(BlueprintAssignable, Category = "Orchestrator | Events")
+	FOnArtifactStolenSignature OnArtifactStolen;
 
 	// ---------- Sphere / Refs ----------
 
