@@ -6,6 +6,9 @@
 #include "InputActionValue.h"
 #include "InputMappingContext.h"
 #include "../Maze/MazeTypes.h"
+#include "../Artifact/Artifact.h"
+#include "../Inventory//ItemStorageComponent.h"
+
 #include "MyCharacterBase.generated.h"
 
 class AOrchestrator;
@@ -15,6 +18,7 @@ class UCapsuleComponent;
 class UStaticMeshComponent;
 class UCameraComponent;
 class UInputComponent;
+class AArtifact;
 
 /**
  * AMyCharacterBase
@@ -115,6 +119,21 @@ protected:
 
 	// ---- Misc ----
 	bool FindClosestCell(const FVector& WorldPos, int32& OutFace, int32& OutX, int32& OutY) const;
+
+
+public:
+	// ===== ITEM STORAGE (BACKPACK) =====
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Inventory")
+	TObjectPtr<UItemStorageComponent> StorageComponent;
+
+	// Bridge: converts AArtifact data into a generic FStoredItem and hands it to StorageComponent.
+	bool AddArtifactToInventory(AArtifact* Artifact);
+
+	// INPUT HELPERS
+	void UseArtifactSlot1();
+	void UseArtifactSlot2();
+	void UseArtifactSlot3();
+	void UseArtifactSlot4();
 
 	// =========================================================================
 	// Components (cached from Blueprint)
@@ -232,6 +251,8 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Debug")
 	bool bShowCameraDebug = false;
 
+
+	
 	// =========================================================================
 	// Private state
 	// =========================================================================

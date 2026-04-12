@@ -14,6 +14,8 @@
 #include "../Conversion/CubeToSphere.h"
 #include "../Maze/Maze.h"
 
+#include "../Artifact/Artifact.h"
+
 // =============================================================================
 // Anonymous helpers
 // =============================================================================
@@ -41,6 +43,8 @@ AMyCharacterBase::AMyCharacterBase()
 {
 	PrimaryActorTick.bCanEverTick = true;
 	AutoPossessPlayer = EAutoReceiveInput::Disabled;
+
+	StorageComponent = CreateDefaultSubobject<UItemStorageComponent>(TEXT("StorageComponent"));
 
 	static ConstructorHelpers::FObjectFinder<UInputMappingContext> IMCFinder(
 		TEXT("/Game/IMC_Controller.IMC_Controller"));
@@ -84,6 +88,7 @@ void AMyCharacterBase::CacheCharacterComponents()
 void AMyCharacterBase::BeginPlay()
 {
 	Super::BeginPlay();
+	// StorageComponent::BeginPlay handles slot initialisation
 	CacheCharacterComponents();
 	RefreshAfterMazeRebuild();
 }
@@ -137,6 +142,12 @@ void AMyCharacterBase::SetupPlayerInputComponent(UInputComponent* PlayerInputCom
 		if (IA_Look)
 			EIC->BindAction(IA_Look, ETriggerEvent::Triggered, this, &AMyCharacterBase::HandleLookInput);
 	}
+
+	//Artifact Triggers!!!!
+	InputComponent->BindKey(EKeys::One, IE_Pressed, this, &AMyCharacterBase::UseArtifactSlot1);
+	InputComponent->BindKey(EKeys::Two, IE_Pressed, this, &AMyCharacterBase::UseArtifactSlot2);
+	InputComponent->BindKey(EKeys::Three, IE_Pressed, this, &AMyCharacterBase::UseArtifactSlot3);
+	InputComponent->BindKey(EKeys::Four, IE_Pressed, this, &AMyCharacterBase::UseArtifactSlot4);
 }
 
 // =============================================================================
@@ -799,3 +810,48 @@ void AMyCharacterBase::DumpAllMazeFacesAscii() const
 		DumpMazeFaceAscii(F);
 	}
 }
+bool AMyCharacterBase::AddArtifactToInventory(AArtifact* Artifact)
+{
+	if (!Artifact || !StorageComponent)
+		return false;
+
+	FStoredItem Item;
+	Item.ItemCategory = static_cast<EItemCategory>(Artifact->ArtifactType);
+
+	switch (Artifact->ArtifactType)
+	{
+	case EArtifactType::Beam:
+		Item.ItemName        = TEXT("Red Beam");
+		Item.CooldownDuration = 3.f;
+		break;
+	case EArtifactType::PhaseWalk:
+		Item.ItemName        = TEXT("Green Phase Walk");
+		Item.CooldownDuration = 6.f;
+		break;
+	case EArtifactType::PathFinder:
+		Item.ItemName        = TEXT("Yellow Path Finder");
+		Item.CooldownDuration = 8.f;
+		break;
+	case EArtifactType::Barrier:
+		Item.ItemName        = TEXT("Blue Barrier");
+		Item.CooldownDuration = 10.f;
+		break;
+	default:
+		Item.ItemName        = TEXT("Unknown Artifact");
+		Item.CooldownDuration = 5.f;
+		break;
+	}
+
+	if (StorageComponent->AddItem(Item) == INDEX_NONE)
+		return false;
+
+	Artifact->bIsCarried = true;
+	Artifact->Carrier    = this;
+	Artifact->Destroy();
+	return true;
+}
+
+void AMyCharacterBase::UseArtifactSlot1() { StorageComponent->UseSlot(0); }
+void AMyCharacterBase::UseArtifactSlot2() { StorageComponent->UseSlot(1); }
+void AMyCharacterBase::UseArtifactSlot3() { StorageComponent->UseSlot(2); }
+void AMyCharacterBase::UseArtifactSlot4() { StorageComponent->UseSlot(3); }

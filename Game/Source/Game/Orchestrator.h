@@ -14,6 +14,8 @@ class UInstancedStaticMeshComponent;
 class UProceduralMeshComponent;
 class UStaticMesh;
 class UMaterialInterface;
+class AMazeArtifactManager;
+
 
 /**
  * AOrchestrator
@@ -153,6 +155,12 @@ public:
 	/** How many artifacts should spawn every time TriggerNextRun() is called? */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Orchestrator | AI")
 	int32 NumArtifactsToSpawn = 1;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Orchestrator | Artifacts")
+    TSubclassOf<AMazeArtifactManager> ArtifactManagerClass;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Orchestrator | Artifacts")
+    AMazeArtifactManager* ArtifactManager = nullptr;
 
 	/** List of all artifacts currently active on the sphere. */
 	UPROPERTY()

@@ -8,6 +8,9 @@
 #include "Components/InstancedStaticMeshComponent.h"
 #include "ProceduralMeshComponent.h"
 #include "Engine/StaticMeshActor.h"
+#include "Artifact/MazeArtifactManager.h"
+#include "Kismet/GameplayStatics.h"
+#include "Movement/MyCharacterBase.h"
 
 
 namespace
@@ -593,12 +596,6 @@ namespace
  */
 void AOrchestrator::BuildWallsFromMaze()
 {
-	UE_LOG(LogTemp, Warning,
-	TEXT("CORNER SETUP CornerHISM=%s CornerMesh=%s HISMStaticMesh=%s UseProcedural=%s"),
-	CornerHISM ? TEXT("VALID") : TEXT("NULL"),
-	CornerMesh ? *GetNameSafe(CornerMesh) : TEXT("NULL"),
-	(CornerHISM && CornerHISM->GetStaticMesh()) ? *GetNameSafe(CornerHISM->GetStaticMesh()) : TEXT("NULL"),
-	bUseProceduralWalls ? TEXT("true") : TEXT("false"));
 
 	if (CornerHISM)
 	{
@@ -754,11 +751,6 @@ void AOrchestrator::BuildWallsFromMaze()
 			Found->Dirs.Add(AlongEdge.GetSafeNormal());
 		}
 
-		UE_LOG(LogTemp, Warning,
-		TEXT("AddCornerSample P=%s Dir=%s Key=%s"),
-		*P.ToString(),
-		*AlongEdge.GetSafeNormal().ToString(),
-		*Key);
 	};
 
 	Vertices.Reserve(N * N * 6 * 8);
@@ -839,20 +831,14 @@ void AOrchestrator::BuildWallsFromMaze()
 		{
 			const FCornerAccum& Corner = Pair.Value;
 
-			UE_LOG(LogTemp, Warning,
-				TEXT("CORNER CHECK Pos=%s Dirs=%d"),
-				*Corner.Pos.ToString(),
-				Corner.Dirs.Num());
 
 			if (Corner.Dirs.Num() < 2)
 			{
-				UE_LOG(LogTemp, Warning, TEXT("CORNER SKIP not enough dirs"));
 				continue;
 			}
 
 			if (!HasNonCollinearPair(Corner.Dirs))
 			{
-				UE_LOG(LogTemp, Warning, TEXT("CORNER SKIP collinear"));
 				continue;
 			}
 
@@ -870,12 +856,6 @@ void AOrchestrator::BuildWallsFromMaze()
 
 			if (T.IsValid())
 			{
-				UE_LOG(LogTemp, Warning,
-				TEXT("CORNER SPAWN Loc=%s ScaleXY=%.3f ScaleZ=%.3f"),
-				*Loc.ToString(),
-				CornerScaleXY,
-				CornerScaleZ);
-
 				CornerHISM->AddInstance(T);
 			}
 		}
@@ -901,15 +881,34 @@ void AOrchestrator::BuildWallsFromMaze()
  */
 void AOrchestrator::BeginPlay()
 {
-	Super::BeginPlay();
+    Super::BeginPlay();
 
-	if (!SphereActor || !MazeRunnerClass || !MarkerMesh)
-		return;
+	EnsureMazeGenerated();
 
-	// 1. ADD THIS LINE (It was missing/commented out)
+    if (ArtifactManagerClass && !ArtifactManager && SphereActor && Maze)
+    {
+        FActorSpawnParameters ArtifactSpawnParams;
+        ArtifactSpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+        ArtifactSpawnParams.Owner = this;
+
+        ArtifactManager = GetWorld()->SpawnActor<AMazeArtifactManager>(
+            ArtifactManagerClass,
+            GetActorLocation(),
+            FRotator::ZeroRotator,
+            ArtifactSpawnParams);
+
+        if (ArtifactManager)
+        {
+            ArtifactManager->Maze = Maze;
+            ArtifactManager->SphereActor = SphereActor;
+            ArtifactManager->PlayerPawn = UGameplayStatics::GetPlayerPawn(GetWorld(), 0);
+
+            UE_LOG(LogTemp, Warning, TEXT("Spawned Artifact Manager from Orchestrator"));
+        }
+    }
+
 	FActorSpawnParameters SpawnParams;
 	SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-
 	SpawnParams.Owner = this;
 
 	for (int32 i = 0; i < 2; i++)
@@ -921,14 +920,18 @@ void AOrchestrator::BeginPlay()
 			if (NewRunner)
 			{
 				NewRunner->AttachToActor(SphereActor, FAttachmentTransformRules::KeepWorldTransform);
-				ActiveRunners.Add(NewRunner); // Adds to our 2-AI list
-
+				NewRunner->OnPathCompleted.AddDynamic(this, &AOrchestrator::OnRunnerReachedArtifact);
+				ActiveRunners.Add(NewRunner);
 				AssignTargetToRunner(NewRunner);
 			}
 		}
 	}
-}
 
+	if (ArtifactManager && ActiveRunners.Num() > 0)
+	{
+		ArtifactManager->AIPawn = ActiveRunners[0];
+	}
+}
 /**
  * desc : Triggers the spawn of new artifacts on the maze and wakes up the AI to hunt them.
  * args : None
@@ -937,6 +940,13 @@ void AOrchestrator::BeginPlay()
 void AOrchestrator::TriggerNextRun()
 {
 	RuntimeSeedOffset += 100;
+
+	// Advance wave index on the player's storage component so pickups this wave are tagged correctly.
+	if (AMyCharacterBase* PC = Cast<AMyCharacterBase>(UGameplayStatics::GetPlayerPawn(GetWorld(), 0)))
+	{
+		if (PC->StorageComponent)
+			PC->StorageComponent->CurrentWaveIndex++;
+	}
 
 	// FIX: Check if the array has any runners instead of looking for a single 'ActiveRunner'
 	if (!SphereActor || !MarkerMesh || ActiveRunners.Num() == 0)

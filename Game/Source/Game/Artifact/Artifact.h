@@ -55,6 +55,15 @@ public:
     UPROPERTY(BlueprintReadOnly, Category="Artifact")
     AActor* Carrier = nullptr; // The actor currently carrying the artifact (e.g., the player)
 
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Artifact|Test")
+    float IdleSurfaceOffset = 35.f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Artifact|Test")
+    FVector CarriedHatOffset = FVector(0.f, 0.f, 110.f);
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Artifact|Test")
+    FVector CarriedHatScale = FVector(0.35f, 0.35f, 0.35f);
+
     // ---------- Maze Integration ----------
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Artifact|Maze")
     UMaze* Maze = nullptr;
@@ -85,6 +94,9 @@ public:
 
     UFUNCTION(BlueprintCallable, Category="Artifact|Ability")
     void ActivateAbilityFromNode(const FMazeNode& StartNode, EMazeDir Direction); // More direct control, used for testing and potential future AI use
+
+    UFUNCTION(BlueprintCallable, Category="Artifact|Visual")
+    void ApplyDebugVisuals();
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Artifact|Ability")
     int32 MaxCharges = 2; // Maximum number of times the artifact can be used before depletion
