@@ -79,6 +79,32 @@ void AMazeRunner::SetPath(const TArray<FVector> &NewLocalPath, ACubeToSphere *In
 	bIsMoving = (PathToFollow.Num() > 0 && TargetSphere);
 }
 
+void AMazeRunner::Die()
+{
+	GetWorldTimerManager().ClearTimer(EscapeTimerHandle);
+	GetWorldTimerManager().ClearTimer(RePathTimerHandle);
+
+	// Safely drop the artifact if we are holding it
+	if (MyTarget && CurrentState == EAIState::Escaping)
+	{
+		AActor *Dropped = Cast<AActor>(MyTarget); // FIX: Cast to AActor to avoid the C2440 error
+		MyTarget = nullptr;
+
+		if (Dropped)
+		{
+			Dropped->DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);
+			if (TargetSphere)
+				Dropped->AttachToActor(TargetSphere, FAttachmentTransformRules::KeepWorldTransform);
+			Dropped->SetActorLocation(GetActorLocation());
+			Dropped->SetActorHiddenInGame(false);
+			Dropped->SetActorEnableCollision(true);
+		}
+	}
+
+	// Just destroy it! Your GameLevelManager automatically detects invalid runners every 0.5s!
+	this->Destroy();
+}
+
 void AMazeRunner::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
@@ -202,7 +228,7 @@ void AMazeRunner::NotifyActorBeginOverlap(AActor *OtherActor)
 		// If we are killed while holding the artifact, drop it back onto the sphere
 		if (MyTarget && CurrentState == EAIState::Escaping)
 		{
-			AArtifact* DroppedArtifact = MyTarget;
+			AArtifact *DroppedArtifact = MyTarget;
 			MyTarget = nullptr;
 
 			DroppedArtifact->DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);

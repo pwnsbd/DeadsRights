@@ -37,9 +37,13 @@ public:
 	EAIState CurrentState = EAIState::Hunting;
 
 	UPROPERTY()
-	AArtifact* MyTarget = nullptr;
+	AArtifact *MyTarget = nullptr;
 
 	FTimerHandle EscapeTimerHandle;
+
+	/** Called when hit by a weapon or beam */
+	UFUNCTION(BlueprintCallable, Category = "AI|Health")
+	void Die();
 
 	void FinishEscape();
 	virtual void NotifyActorBeginOverlap(AActor *OtherActor) override;
@@ -78,6 +82,8 @@ private:
 	// --- ADD THIS LINE TO FIX THE ERROR ---
 	/** Tracks the player's last known location to dynamically update paths. */
 	FVector LastPlayerPosForPath = FVector::ZeroVector;
+
+	FTimerHandle RePathTimerHandle;
 	/** * Finds the index of the node in the new path that is closest to our current
 	 * physical location so we don't "snap" backwards when recalculating.
 	 */
