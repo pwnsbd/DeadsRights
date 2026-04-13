@@ -87,22 +87,40 @@ void AMazeRunner::Die()
 	// Safely drop the artifact if we are holding it
 	if (MyTarget && CurrentState == EAIState::Escaping)
 	{
-		AActor *Dropped = Cast<AActor>(MyTarget); // FIX: Cast to AActor to avoid the C2440 error
+		AArtifact *DroppedArtifact = MyTarget;
 		MyTarget = nullptr;
 
-		if (Dropped)
+		if (DroppedArtifact)
 		{
-			Dropped->DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);
+			DroppedArtifact->DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);
+
 			if (TargetSphere)
-				Dropped->AttachToActor(TargetSphere, FAttachmentTransformRules::KeepWorldTransform);
-			Dropped->SetActorLocation(GetActorLocation());
-			Dropped->SetActorHiddenInGame(false);
-			Dropped->SetActorEnableCollision(true);
+			{
+				DroppedArtifact->AttachToActor(TargetSphere, FAttachmentTransformRules::KeepWorldTransform);
+				// FIX 1: Tell the manager exactly what cell the AI died on!
+				DroppedArtifact->CurrentCell = TargetSphere->WorldToMazeCell(GetActorLocation());
+			}
+
+			DroppedArtifact->SetActorLocation(GetActorLocation());
+			DroppedArtifact->SetActorHiddenInGame(false);
+			DroppedArtifact->SetActorEnableCollision(true);
+
+			// FIX 2: Officially tell the game the item is dropped!
+			DroppedArtifact->bIsCarried = false;
+			DroppedArtifact->Carrier = nullptr;
 		}
 	}
 
-	// Just destroy it! Your GameLevelManager automatically detects invalid runners every 0.5s!
 	this->Destroy();
+}
+
+void AMazeRunner::NotifyActorBeginOverlap(AActor *OtherActor)
+{
+	if (OtherActor && OtherActor->IsA(APawn::StaticClass()))
+	{
+		// Keep it clean: If the player overlaps us, just run the exact same death logic!
+		Die();
+	}
 }
 
 void AMazeRunner::Tick(float DeltaTime)
@@ -117,6 +135,14 @@ void AMazeRunner::Tick(float DeltaTime)
 	FVector CurrentWorldLoc = GetActorLocation();
 	FVector PlayerLoc = PlayerPawn->GetActorLocation();
 	float DistToPlayer = FVector::Dist(CurrentWorldLoc, PlayerLoc);
+
+	// --- NEW: Foolproof Player Collision Check ---
+	// If Unreal's physics engine fails to register the overlap, this math will catch it!
+	if (DistToPlayer < 1.0f)
+	{
+		Die();
+		return; // Stop ticking, we are dead!
+	}
 
 	// --- 1. STATE COLORS ---
 	if (CurrentState == EAIState::Escaping)
@@ -219,32 +245,32 @@ void AMazeRunner::Tick(float DeltaTime)
 	}
 }
 
-void AMazeRunner::NotifyActorBeginOverlap(AActor *OtherActor)
-{
-	if (OtherActor && OtherActor->IsA(APawn::StaticClass()))
-	{
-		GetWorldTimerManager().ClearTimer(EscapeTimerHandle);
+// void AMazeRunner::NotifyActorBeginOverlap(AActor *OtherActor)
+// {
+// 	if (OtherActor && OtherActor->IsA(APawn::StaticClass()))
+// 	{
+// 		GetWorldTimerManager().ClearTimer(EscapeTimerHandle);
 
-		// If we are killed while holding the artifact, drop it back onto the sphere
-		if (MyTarget && CurrentState == EAIState::Escaping)
-		{
-			AArtifact *DroppedArtifact = MyTarget;
-			MyTarget = nullptr;
+// 		// If we are killed while holding the artifact, drop it back onto the sphere
+// 		if (MyTarget && CurrentState == EAIState::Escaping)
+// 		{
+// 			AArtifact *DroppedArtifact = MyTarget;
+// 			MyTarget = nullptr;
 
-			DroppedArtifact->DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);
-			if (TargetSphere)
-				DroppedArtifact->AttachToActor(TargetSphere, FAttachmentTransformRules::KeepWorldTransform);
+// 			DroppedArtifact->DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);
+// 			if (TargetSphere)
+// 				DroppedArtifact->AttachToActor(TargetSphere, FAttachmentTransformRules::KeepWorldTransform);
 
-			DroppedArtifact->SetActorLocation(GetActorLocation());
-			DroppedArtifact->SetActorHiddenInGame(false);
-			DroppedArtifact->SetActorEnableCollision(true);
-			DroppedArtifact->bIsCarried = false;
-			DroppedArtifact->Carrier = nullptr;
-		}
+// 			DroppedArtifact->SetActorLocation(GetActorLocation());
+// 			DroppedArtifact->SetActorHiddenInGame(false);
+// 			DroppedArtifact->SetActorEnableCollision(true);
+// 			DroppedArtifact->bIsCarried = false;
+// 			DroppedArtifact->Carrier = nullptr;
+// 		}
 
-		this->Destroy();
-	}
-}
+// 		this->Destroy();
+// 	}
+// }
 
 void AMazeRunner::FinishEscape()
 {

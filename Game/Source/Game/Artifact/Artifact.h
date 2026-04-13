@@ -101,12 +101,32 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Artifact|Ability")
     int32 MaxCharges = 100; // Maximum number of times the artifact can be used before depletion
 
+    // --- ADD EVERYTHING BELOW THIS LINE TO FIX THE COMPILE ERRORS ---
+
+    /** Lock to prevent firing multiple times at once */
+    bool bIsBeamActive = false;
+
+    /** Stores the 3D coordinates of the beam's path */
+    TArray<FVector> ActiveBeamPoints;
+
     UPROPERTY(BlueprintReadOnly, Category = "Artifact|Ability")
     int32 CurrentCharges;
 
     // Beam parameters
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Artifact|Ability|Beam")
     int32 BeamDistance = 20;
+
+    // --- ADD THESE NEW PROPAGATION VARIABLES ---
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Artifact|Ability|Beam")
+    float BeamPropagationSpeed = 0.04f;
+
+    int32 CurrentBeamSpawnIndex = 0;
+    int32 CurrentCleanupIndex = 0;
+
+    FTimerHandle BeamPropagationTimerHandle;
+
+    void SpawnNextBeamSegment();
+    void CleanupNextBeamSegment();
 
     UPROPERTY()
     TArray<class UParticleSystemComponent *> SpawnedBeamEffects;
@@ -146,6 +166,7 @@ public:
 
 protected:
     void FireBeam(const FMazeNode &StartNode, EMazeDir Direction); // Core logic for firing the beam, called by ActivateAbilityFromNode
+    void FireBeam2(const FMazeNode &StartNode, EMazeDir Direction);
 
     // Phase Walk parameters
     void ActivatePhaseWalk();

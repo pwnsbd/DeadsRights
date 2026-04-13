@@ -214,6 +214,130 @@ void AArtifact::ActivateAbility()
     }
 }
 
+void AArtifact::FireBeam2(const FMazeNode &StartNode, EMazeDir Direction)
+{
+    // Safety check first
+    if (!Carrier || !SphereActor)
+        return;
+
+    // 1. BULLETPROOF OVERRIDE: Instantly sweep up any old timers or fire so the gun NEVER jams!
+    GetWorldTimerManager().ClearTimer(BeamPropagationTimerHandle);
+    GetWorldTimerManager().ClearTimer(BeamCleanupTimerHandle);
+
+    for (UParticleSystemComponent *VFX : SpawnedBeamEffects)
+    {
+        if (IsValid(VFX))
+        {
+            VFX->DestroyComponent();
+        }
+    }
+    SpawnedBeamEffects.Empty();
+    ActiveBeamPoints.Empty();
+
+    // 2. Setup the new 3D arc
+    FVector SphereCenter = SphereActor->GetActorLocation();
+    FVector StartPos = Carrier->GetActorLocation();
+
+    FVector UpDir = (StartPos - SphereCenter).GetSafeNormal();
+    FVector PlayerForward = Carrier->GetActorForwardVector().GetSafeNormal();
+    FVector RightAxis = FVector::CrossProduct(UpDir, PlayerForward).GetSafeNormal();
+
+    float PlanetRadius = FVector::Dist(SphereCenter, StartPos);
+    float DistanceBetweenFirePillars = 150.0f;
+    float DegreesPerStep = (DistanceBetweenFirePillars / PlanetRadius) * (180.0f / PI);
+
+    // Reset tracking indexes
+    CurrentBeamSpawnIndex = 0;
+    CurrentCleanupIndex = 0;
+
+    // 3. Pre-calculate all the points
+    for (int32 i = 0; i < BeamDistance; i++)
+    {
+        FVector PointDir = UpDir.RotateAngleAxis(DegreesPerStep * i, RightAxis);
+        FVector PointPos = SphereCenter + (PointDir * PlanetRadius);
+        PointPos -= (PointDir * 50.0f);
+        ActiveBeamPoints.Add(PointPos);
+    }
+
+    // 4. Fire!
+    GetWorldTimerManager().SetTimer(BeamPropagationTimerHandle, this, &AArtifact::SpawnNextBeamSegment, BeamPropagationSpeed, true, 0.0f);
+}
+
+void AArtifact::CleanupNextBeamSegment()
+{
+    // If we have cleaned up all the fire, just stop the timer
+    if (CurrentCleanupIndex >= SpawnedBeamEffects.Num())
+    {
+        GetWorldTimerManager().ClearTimer(BeamCleanupTimerHandle);
+        SpawnedBeamEffects.Empty();
+        ActiveBeamPoints.Empty();
+        return; // We no longer need bIsBeamActive = false!
+    }
+
+    // Destroy the oldest piece of fire
+    if (SpawnedBeamEffects[CurrentCleanupIndex])
+    {
+        SpawnedBeamEffects[CurrentCleanupIndex]->DestroyComponent();
+    }
+
+    CurrentCleanupIndex++;
+}
+
+void AArtifact::SpawnNextBeamSegment()
+{
+    // If we reached the end of the line, stop spawning
+    if (CurrentBeamSpawnIndex >= ActiveBeamPoints.Num() || !SphereActor)
+    {
+        GetWorldTimerManager().ClearTimer(BeamPropagationTimerHandle);
+        return;
+    }
+
+    FVector PointPos = ActiveBeamPoints[CurrentBeamSpawnIndex];
+    FVector SphereCenter = SphereActor->GetActorLocation();
+
+    // 1. SPAWN THE VISUAL EFFECT
+    if (BeamNodeVFX)
+    {
+        FVector UpDir = (PointPos - SphereCenter).GetSafeNormal();
+        FVector ForwardDir = FVector::ForwardVector; // Fallback
+
+        // Look at the next point to figure out which way to rotate the particle!
+        if (CurrentBeamSpawnIndex < ActiveBeamPoints.Num() - 1)
+        {
+            ForwardDir = (ActiveBeamPoints[CurrentBeamSpawnIndex + 1] - PointPos).GetSafeNormal();
+        }
+        else if (CurrentBeamSpawnIndex > 0)
+        {
+            ForwardDir = (PointPos - ActiveBeamPoints[CurrentBeamSpawnIndex - 1]).GetSafeNormal();
+        }
+
+        FRotator VFXRotation = FRotationMatrix::MakeFromZX(UpDir, ForwardDir).Rotator();
+        UParticleSystemComponent *SpawnedVFX = UGameplayStatics::SpawnEmitterAtLocation(GetWorld(), BeamNodeVFX, PointPos, VFXRotation, FVector(1.0f));
+
+        if (SpawnedVFX)
+            SpawnedBeamEffects.Add(SpawnedVFX);
+    }
+
+    // 2. CHECK FOR KILLS (Only in the current blast radius!)
+    for (TActorIterator<AMazeRunner> It(GetWorld()); It; ++It)
+    {
+        AMazeRunner *Runner = *It;
+        // Keep the 150.0f blast radius so the fire easily catches them
+        if (IsValid(Runner) && FVector::Dist(Runner->GetActorLocation(), PointPos) < 150.0f)
+        {
+            Runner->Die();
+        }
+    }
+
+    // 3. START THE CLEANUP WAVE (Only runs once on the very first cell spawn)
+    if (CurrentBeamSpawnIndex == 0)
+    {
+        GetWorldTimerManager().SetTimer(BeamCleanupTimerHandle, this, &AArtifact::CleanupNextBeamSegment, BeamPropagationSpeed, true, BeamDuration);
+    }
+
+    CurrentBeamSpawnIndex++;
+}
+
 void AArtifact::FireBeam(const FMazeNode &StartNode, EMazeDir Direction)
 {
     // 1. Get the curving path of cells
@@ -301,6 +425,8 @@ void AArtifact::CleanupBeam()
         }
     }
     SpawnedBeamEffects.Empty();
+
+    bIsBeamActive = false;
 }
 
 // More direct ability activation, used for testing and potential future AI use
@@ -316,7 +442,8 @@ void AArtifact::ActivateAbilityFromNode(const FMazeNode &StartNode, EMazeDir Dir
     {
     case EArtifactType::Beam:
         UE_LOG(LogTemp, Warning, TEXT("[ARTIFACT] RED / BEAM used from Face=%d X=%d Y=%d"), StartNode.Face, StartNode.X, StartNode.Y);
-        FireBeam(StartNode, Direction);
+        // FireBeam(StartNode, Direction);
+        FireBeam2(StartNode, Direction);
         break;
 
     case EArtifactType::PhaseWalk:
