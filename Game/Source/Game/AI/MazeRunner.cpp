@@ -138,7 +138,7 @@ void AMazeRunner::Tick(float DeltaTime)
 
 	// --- NEW: Foolproof Player Collision Check ---
 	// If Unreal's physics engine fails to register the overlap, this math will catch it!
-	if (DistToPlayer < 1.0f)
+	if (DistToPlayer < 25.0f)
 	{
 		Die();
 		return; // Stop ticking, we are dead!
