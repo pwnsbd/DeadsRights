@@ -13,6 +13,7 @@
 #include "../Movement/MyCharacterBase.h"
 #include "../AI/MazeRunner.h"
 #include "Particles/ParticleSystemComponent.h"
+#include "../Orchestrator.h"
 
 // ============================================================
 // Initialization
@@ -362,36 +363,52 @@ void AArtifact::EndPhaseWalk()
 // ============================================================
 void AArtifact::ActivatePathFinder()
 {
-    if (!Carrier || !Navigator)
+    if (!Carrier)
         return;
+
+    // 1. Safely grab the global Maze Navigator from the Orchestrator!
+    AOrchestrator *Orch = Cast<AOrchestrator>(UGameplayStatics::GetActorOfClass(GetWorld(), AOrchestrator::StaticClass()));
+    if (!Orch || !Orch->Navigator)
+        return;
+
+    UMazeNavigator *ActiveNavigator = Orch->Navigator;
 
     FVector PlayerPos = Carrier->GetActorLocation();
     AArtifact *Closest = nullptr;
     float BestDist = FLT_MAX;
 
+    // 2. Find the closest artifact that is NOT in someone's inventory
     for (TActorIterator<AArtifact> It(GetWorld()); It; ++It)
     {
-        if (*It == this)
+        AArtifact *Art = *It;
+
+        // Ignore this exact artifact, and ignore any artifact that has already been picked up!
+        if (Art == this || Art->bIsCarried || Art->IsHidden())
             continue;
 
-        float Dist = FVector::Dist(PlayerPos, It->GetActorLocation());
+        float Dist = FVector::Dist(PlayerPos, Art->GetActorLocation());
         if (Dist < BestDist)
         {
             BestDist = Dist;
-            Closest = *It;
+            Closest = Art;
         }
     }
 
     if (!Closest)
-        return;
-
-    TArray<FVector> Path;
-    if (Navigator->FindPath(PlayerPos, Closest->GetActorLocation(), Path))
     {
+        UE_LOG(LogTemp, Warning, TEXT("PathFinder: No available artifacts left to find!"));
+        return;
+    }
+
+    // 3. Calculate the A* Path
+    TArray<FVector> Path;
+    if (ActiveNavigator->FindPath(PlayerPos, Closest->GetActorLocation(), Path))
+    {
+        // Draw a glowing yellow trail of breadcrumbs to the target
         for (int32 i = 0; i < Path.Num() - 1; i++)
         {
-            DrawDebugLine(GetWorld(), Path[i], Path[i + 1], FColor::Green, false, PathDuration, 0, 12.f);
-            DrawDebugSphere(GetWorld(), Path[i], 25, 12, FColor::Green, false, PathDuration);
+            DrawDebugLine(GetWorld(), Path[i], Path[i + 1], FColor::Yellow, false, PathDuration, 0, 15.f);
+            DrawDebugSphere(GetWorld(), Path[i], 30.f, 12, FColor::Yellow, false, PathDuration);
         }
     }
 }
