@@ -160,6 +160,13 @@ protected:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Artifact|Ability|PhaseWalk")
     float PhaseDuration = 6.f;
 
+    // The visual aura that wraps around the player
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Artifact|Ability|PhaseWalk")
+    class UParticleSystem *PhaseWalkVFX;
+
+    UPROPERTY()
+    class UParticleSystemComponent *ActivePhaseVFX;
+
     void ActivatePhaseWalk();
     void EndPhaseWalk();
     FTimerHandle PhaseTimer;

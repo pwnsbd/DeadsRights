@@ -310,16 +310,26 @@ void AArtifact::CleanupNextBeamSegment()
 // ============================================================
 void AArtifact::ActivatePhaseWalk()
 {
-    if (!Carrier)
+    if (!Carrier || !SphereActor)
         return;
 
-    UCapsuleComponent *Capsule = Carrier->FindComponentByClass<UCapsuleComponent>();
-    if (!Capsule)
-        return;
+    // FIX: Tell the character's logical movement system to ignore walls!
+    if (AMyCharacterBase *Char = Cast<AMyCharacterBase>(Carrier))
+    {
+        Char->bIsPhasing = true;
+    }
 
-    Capsule->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-
-    DrawDebugSphere(GetWorld(), Carrier->GetActorLocation(), 120, 16, FColor::Purple, false, PhaseDuration, 0, 5);
+    // Spawn the ghost aura effect and attach it to the player!
+    if (PhaseWalkVFX)
+    {
+        ActivePhaseVFX = UGameplayStatics::SpawnEmitterAttached(
+            PhaseWalkVFX,
+            Carrier->GetRootComponent(),
+            NAME_None,
+            FVector::ZeroVector,
+            FRotator::ZeroRotator,
+            EAttachLocation::SnapToTarget);
+    }
 
     GetWorldTimerManager().SetTimer(PhaseTimer, this, &AArtifact::EndPhaseWalk, PhaseDuration, false);
 }
@@ -329,16 +339,22 @@ void AArtifact::EndPhaseWalk()
     if (!Carrier || !SphereActor)
         return;
 
-    UCapsuleComponent *Capsule = Carrier->FindComponentByClass<UCapsuleComponent>();
-    if (!Capsule)
-        return;
+    // FIX: Turn the wall collisions back on!
+    if (AMyCharacterBase *Char = Cast<AMyCharacterBase>(Carrier))
+    {
+        Char->bIsPhasing = false;
+    }
 
-    Capsule->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+    // Put out the visual effect
+    if (ActivePhaseVFX)
+    {
+        ActivePhaseVFX->DestroyComponent();
+        ActivePhaseVFX = nullptr;
+    }
 
-    FMazeNode Node = SphereActor->WorldToMazeCell(Carrier->GetActorLocation());
-    FVector SafePos = SphereActor->GetCellCenterWorld(Node.Face, Node.X, Node.Y);
-
-    Carrier->SetActorLocation(SafePos);
+    // Note: Because your character moves strictly from grid center to grid center,
+    // they can NEVER accidentally end their phase walk stuck halfway inside a wall!
+    // They will just safely materialize inside whichever grid cell they are standing in.
 }
 
 // ============================================================
