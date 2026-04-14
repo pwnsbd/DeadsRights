@@ -54,6 +54,10 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Level Manager|Config")
 	TArray<FLevelConfig> LevelConfigs;
 
+	/** Scaling formula used to auto-generate configs for waves 6 and beyond. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Level Manager|Config")
+	FProceduralWaveConfig ProceduralConfig;
+
 	/** The Blueprint artifact class to spawn — set this in BP_GameLevelManager Details panel. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Level Manager|Config")
 	TSubclassOf<AArtifact> ArtifactClass;
@@ -119,6 +123,14 @@ protected:
 	UFUNCTION(BlueprintPure, Category = "Level Manager")
 	int32 GetRemainingRunnerCount() const;
 
+	/** Returns the current 1-based wave number (every 3 levels = 1 wave). */
+	UFUNCTION(BlueprintPure, Category = "Level Manager")
+	int32 GetCurrentWaveNumber() const;
+
+	/** Returns the 1-based level index within the current wave (1, 2, or 3). */
+	UFUNCTION(BlueprintPure, Category = "Level Manager")
+	int32 GetCurrentLevelInWave() const;
+
 	/** Blueprint-bindable so HUD/audio can react to a loss. */
 	UPROPERTY(BlueprintAssignable, Category = "Level Manager|Events")
 	FOnGameLost OnGameLostDelegate;
@@ -146,6 +158,10 @@ protected:
 private:
 	/** Fired one tick after BeginPlay — all actors are ready by then. */
 	void OnWorldReady();
+
+	/** Returns the FLevelConfig for LevelIndex — reads from LevelConfigs for manual levels,
+	 *  generates procedurally for any index beyond the array. */
+	FLevelConfig GetConfigForLevel(int32 LevelIndex) const;
 
 	/** Seed captured from Orchestrator at startup — used as the base for per-level offsets. */
 	int32 BaseSeed = 0;

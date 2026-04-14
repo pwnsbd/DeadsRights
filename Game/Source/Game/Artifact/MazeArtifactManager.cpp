@@ -263,14 +263,25 @@ void AMazeArtifactManager::SpawnArtifacts()
         NewArtifact->AIPawn = AIPawn;
         NewArtifact->CurrentCell = SpawnCell;
 
-        switch (i % 4)
+        EArtifactType TypeToAssign = EArtifactType::None;
+        if (bAllowAllArtifactTypes)
         {
-        case 0: NewArtifact->ArtifactType = EArtifactType::Beam; break;
-        case 1: NewArtifact->ArtifactType = EArtifactType::PhaseWalk; break;
-        case 2: NewArtifact->ArtifactType = EArtifactType::PathFinder; break;
-        case 3: NewArtifact->ArtifactType = EArtifactType::Barrier; break;
-        default: NewArtifact->ArtifactType = EArtifactType::Beam; break;
+            // Wave 5+: round-robin through all four powered types
+            switch (i % 4)
+            {
+            case 0: TypeToAssign = EArtifactType::Beam;       break;
+            case 1: TypeToAssign = EArtifactType::PhaseWalk;  break;
+            case 2: TypeToAssign = EArtifactType::PathFinder; break;
+            default: TypeToAssign = EArtifactType::Barrier;   break;
+            }
         }
+        else if (IntroducedArtifactType != EArtifactType::None && i == 0)
+        {
+            // Intro level: first artifact is the newly-introduced powered type
+            TypeToAssign = IntroducedArtifactType;
+        }
+        // else: TypeToAssign stays None (basic artifact, no ability)
+        NewArtifact->ArtifactType = TypeToAssign;
 
         NewArtifact->ApplyDebugVisuals();
 

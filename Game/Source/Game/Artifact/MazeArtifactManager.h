@@ -4,9 +4,9 @@
 #include "GameFramework/Actor.h"
 #include "../Maze/Maze.h"
 #include "../Conversion/CubeToSphere.h"
+#include "../Artifact/Artifact.h"
 #include "MazeArtifactManager.generated.h"
 
-class AArtifact;
 class UMaze;
 class ACubeToSphere;
 
@@ -67,6 +67,16 @@ public:
 
     UPROPERTY(EditAnywhere, Category="Artifacts")
     int32 SpawnSafetyRadius = 4;
+
+    /** Set by GameLevelManager before SpawnArtifacts(). The powered type placed in the first slot.
+     *  EArtifactType::None means all artifacts this level are basic (no ability).
+     *  Ignored when bAllowAllArtifactTypes is true. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Artifacts")
+    EArtifactType IntroducedArtifactType = EArtifactType::None;
+
+    /** When true, all four artifact types spawn in round-robin order (Wave 5+ behaviour). */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Artifacts")
+    bool bAllowAllArtifactTypes = false;
 
 private:
     void ResolveReferences();

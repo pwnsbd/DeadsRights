@@ -85,10 +85,8 @@ void AGameLevelManager::StartCountdown()
 	if (PlayerCharacter)
 		PlayerCharacter->bInputFrozen = true;
 
-	// Pull duration from the current level config; fall back to 3s
-	float Duration = 3.f;
-	if (LevelConfigs.IsValidIndex(CurrentLevelIndex))
-		Duration = LevelConfigs[CurrentLevelIndex].CountdownSeconds;
+	// Pull duration from the current level config (manual or procedural)
+	const float Duration = GetConfigForLevel(CurrentLevelIndex).CountdownSeconds;
 
 	CountdownSecondsRemaining = FMath::Max(1, FMath::RoundToInt(Duration));
 
@@ -137,13 +135,7 @@ void AGameLevelManager::SetupCurrentLevel()
 {
 	if (!HasValidReferences()) return;
 
-	if (!LevelConfigs.IsValidIndex(CurrentLevelIndex))
-	{
-		UE_LOG(LogTemp, Error, TEXT("[LevelManager] SetupCurrentLevel: No config for index %d"), CurrentLevelIndex);
-		return;
-	}
-
-	const FLevelConfig& Config = LevelConfigs[CurrentLevelIndex];
+	const FLevelConfig Config = GetConfigForLevel(CurrentLevelIndex);
 
 	UE_LOG(LogTemp, Log, TEXT("[LevelManager] SetupLevel %d | Runners=%d  Artifacts=%d  Seed=%d"),
 		CurrentLevelIndex + 1, Config.NumRunners, Config.NumArtifacts, BaseSeed + Config.SeedOffset);
@@ -166,9 +158,11 @@ void AGameLevelManager::SetupCurrentLevel()
 	// -- Reset and re-spawn artifacts --
 	if (Orchestrator->ArtifactManager)
 	{
-		Orchestrator->ArtifactManager->NumArtifacts = Config.NumArtifacts;
-		Orchestrator->ArtifactManager->bManagedExternally = true;
-		Orchestrator->ArtifactManager->ArtifactClass = ArtifactClass;
+		Orchestrator->ArtifactManager->NumArtifacts              = Config.NumArtifacts;
+		Orchestrator->ArtifactManager->bManagedExternally        = true;
+		Orchestrator->ArtifactManager->ArtifactClass             = ArtifactClass;
+		Orchestrator->ArtifactManager->IntroducedArtifactType    = Config.IntroducedArtifactType;
+		Orchestrator->ArtifactManager->bAllowAllArtifactTypes    = Config.bAllowAllArtifactTypes;
 		Orchestrator->ArtifactManager->ResetForNextLevel();
 	}
 
@@ -251,23 +245,51 @@ void AGameLevelManager::OnLevelWon()
 
 void AGameLevelManager::TransitionToNextLevel()
 {
-	// Advance to the next enabled level
+	// Advance past any disabled manual levels; procedural levels are always enabled
 	do
 	{
 		CurrentLevelIndex++;
 	}
-	while (CurrentLevelIndex < LevelConfigs.Num() && !LevelConfigs[CurrentLevelIndex].bEnabled);
+	while (LevelConfigs.IsValidIndex(CurrentLevelIndex) && !LevelConfigs[CurrentLevelIndex].bEnabled);
 
-	if (CurrentLevelIndex >= LevelConfigs.Num())
-	{
-		CurrentState = EGameLevelState::GameOver;
-		UE_LOG(LogTemp, Log, TEXT("[LevelManager] === ALL LEVELS COMPLETE! Game won! ==="));
-		OnGameCompleteDelegate.Broadcast();
-		return;
-	}
-
-	UE_LOG(LogTemp, Log, TEXT("[LevelManager] Transitioning to Level %d..."), CurrentLevelIndex + 1);
+	UE_LOG(LogTemp, Log, TEXT("[LevelManager] Transitioning to Level %d (Wave %d)..."),
+		CurrentLevelIndex + 1, GetCurrentWaveNumber());
 	StartCountdown();
+}
+
+// ── Procedural Config & Wave Queries ──────────────────────────────────────────
+
+FLevelConfig AGameLevelManager::GetConfigForLevel(int32 LevelIndex) const
+{
+	if (LevelConfigs.IsValidIndex(LevelIndex))
+		return LevelConfigs[LevelIndex];
+
+	// Procedural generation for waves 6+ (any index beyond the manual array)
+	const int32 ProceduralIndex = LevelIndex - LevelConfigs.Num(); // 0-based within procedural section
+	const int32 WaveOffset  = ProceduralIndex / 3; // which procedural wave (0-based)
+	const int32 LevelInWave = ProceduralIndex % 3; // 0, 1, or 2
+
+	FLevelConfig Config;
+	Config.bEnabled               = true;
+	Config.bAllowAllArtifactTypes = true; // wave 6+: all types in round-robin
+	Config.NumArtifacts           = ProceduralConfig.BaseArtifacts
+	                                + WaveOffset  * ProceduralConfig.ArtifactsPerWaveGrowth
+	                                + LevelInWave * ProceduralConfig.ArtifactsPerLevelGrowth;
+	Config.NumRunners             = ProceduralConfig.BaseRunners
+	                                + FMath::CeilToInt(WaveOffset * ProceduralConfig.RunnersPerWaveGrowth);
+	Config.CountdownSeconds       = ProceduralConfig.CountdownSeconds;
+	Config.SeedOffset             = LevelIndex * 7; // prime multiplier for varied seeds
+	return Config;
+}
+
+int32 AGameLevelManager::GetCurrentWaveNumber() const
+{
+	return CurrentLevelIndex / 3 + 1;
+}
+
+int32 AGameLevelManager::GetCurrentLevelInWave() const
+{
+	return CurrentLevelIndex % 3 + 1;
 }
 
 // ── Loss Condition ────────────────────────────────────────────────────────────
