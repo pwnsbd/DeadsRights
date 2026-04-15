@@ -183,6 +183,9 @@ void AArtifact::ActivateAbilityFromNode(const FMazeNode &StartNode, EMazeDir Dir
     case EArtifactType::Barrier:
         ActivateBarrier();
         break;
+    case EArtifactType::AoEBomb:
+        ActivateAoEBomb();
+        break;
     default:
         break;
     }
@@ -311,16 +314,16 @@ void AArtifact::CleanupNextBeamSegment()
 // ============================================================
 void AArtifact::ActivatePhaseWalk()
 {
-    if (!Carrier || !SphereActor)
+    if (!Carrier)
         return;
 
-    // FIX: Tell the character's logical movement system to ignore walls!
+    // 1. Tell the player's movement logic to ignore walls mathematically
     if (AMyCharacterBase *Char = Cast<AMyCharacterBase>(Carrier))
     {
         Char->bIsPhasing = true;
     }
 
-    // Spawn the ghost aura effect and attach it to the player!
+    // 2. Spawn the visual ghost aura
     if (PhaseWalkVFX)
     {
         ActivePhaseVFX = UGameplayStatics::SpawnEmitterAttached(
@@ -337,25 +340,21 @@ void AArtifact::ActivatePhaseWalk()
 
 void AArtifact::EndPhaseWalk()
 {
-    if (!Carrier || !SphereActor)
+    if (!Carrier)
         return;
 
-    // FIX: Turn the wall collisions back on!
+    // 1. Tell the player's movement logic to respect walls again
     if (AMyCharacterBase *Char = Cast<AMyCharacterBase>(Carrier))
     {
         Char->bIsPhasing = false;
     }
 
-    // Put out the visual effect
+    // 2. Turn off the ghost aura
     if (ActivePhaseVFX)
     {
         ActivePhaseVFX->DestroyComponent();
         ActivePhaseVFX = nullptr;
     }
-
-    // Note: Because your character moves strictly from grid center to grid center,
-    // they can NEVER accidentally end their phase walk stuck halfway inside a wall!
-    // They will just safely materialize inside whichever grid cell they are standing in.
 }
 
 // ============================================================
@@ -459,6 +458,94 @@ void AArtifact::DestroyBarrier()
 }
 
 // ============================================================
+// Ability: AoE Bomb
+// ============================================================
+void AArtifact::ActivateAoEBomb()
+{
+    if (!Carrier || !SphereActor)
+        return;
+
+    // Lock in the center of the explosion
+    CurrentAoERadius = 0.f;
+    AoECenterPos = Carrier->GetActorLocation();
+
+    FVector SphereCenter = SphereActor->GetActorLocation();
+    AoEUpDir = (AoECenterPos - SphereCenter).GetSafeNormal();
+    AoEForwardAxis = Carrier->GetActorForwardVector();
+
+    // Ensure the axes are perfectly flat against the planet
+    FVector RightAxis = FVector::CrossProduct(AoEUpDir, AoEForwardAxis).GetSafeNormal();
+    AoEForwardAxis = FVector::CrossProduct(RightAxis, AoEUpDir).GetSafeNormal();
+
+    // Start the outward shockwave timer!
+    GetWorldTimerManager().SetTimer(AoEExpansionTimer, this, &AArtifact::ExpandAoE, AoEPropagationSpeed, true, 0.0f);
+}
+
+void AArtifact::ExpandAoE()
+{
+    if (!SphereActor || CurrentAoERadius > AoEMaxRadius)
+    {
+        // We reached max size! Stop expanding and schedule the cleanup.
+        GetWorldTimerManager().ClearTimer(AoEExpansionTimer);
+        GetWorldTimerManager().SetTimer(AoECleanupTimer, this, &AArtifact::CleanupAoE, 2.0f, false);
+        return;
+    }
+
+    FVector SphereCenter = SphereActor->GetActorLocation();
+
+    // Calculate how many particles we need to form a solid ring at this specific radius
+    float Circumference = 2.0f * PI * CurrentAoERadius;
+    int32 NumParticles = FMath::Max(1, FMath::RoundToInt(Circumference / 100.0f));
+
+    for (int32 i = 0; i < NumParticles; i++)
+    {
+        float Angle = (360.0f / NumParticles) * i;
+        FVector Dir = AoEForwardAxis.RotateAngleAxis(Angle, AoEUpDir);
+        FVector Pos = AoECenterPos + (Dir * CurrentAoERadius);
+
+        // Snap the ring to the sphere surface
+        FVector PosUp = (Pos - SphereCenter).GetSafeNormal();
+        Pos = SphereCenter + (PosUp * FVector::Dist(SphereCenter, AoECenterPos));
+
+        if (AoEVFX)
+        {
+            FRotator Rot = FRotationMatrix::MakeFromZ(PosUp).Rotator();
+            UParticleSystemComponent *VFX = UGameplayStatics::SpawnEmitterAtLocation(GetWorld(), AoEVFX, Pos, Rot, FVector(1.0f));
+            if (VFX)
+                SpawnedAoEEffects.Add(VFX);
+        }
+    }
+
+    // --- DAMAGE CHECK ---
+    // Kill any AI caught in the current shockwave ring
+    for (TActorIterator<AMazeRunner> It(GetWorld()); It; ++It)
+    {
+        if (IsValid(*It))
+        {
+            float Dist = FVector::Dist((*It)->GetActorLocation(), AoECenterPos);
+            // If they are within the new outer edge, and outside the old inner edge, they get hit!
+            if (Dist <= (CurrentAoERadius + 50.f) && Dist > (CurrentAoERadius - AoEExpansionStep))
+            {
+                (*It)->Die();
+            }
+        }
+    }
+
+    // Expand the radius for the next tick
+    CurrentAoERadius += AoEExpansionStep;
+}
+
+void AArtifact::CleanupAoE()
+{
+    for (UParticleSystemComponent *VFX : SpawnedAoEEffects)
+    {
+        if (IsValid(VFX))
+            VFX->DestroyComponent();
+    }
+    SpawnedAoEEffects.Empty();
+}
+
+// ============================================================
 // Editor / Debug
 // ============================================================
 void AArtifact::ApplyDebugVisuals()
@@ -481,6 +568,9 @@ void AArtifact::ApplyDebugVisuals()
     case EArtifactType::Barrier:
         Color = FLinearColor::Blue;
         break;
+    case EArtifactType::AoEBomb:
+        Color = FLinearColor(1.0f, 0.25f, 0.0f);
+        break;
     default:
         break;
     }
@@ -500,6 +590,7 @@ void AArtifact::EndPlay(const EEndPlayReason::Type EndPlayReason)
     Super::EndPlay(EndPlayReason);
 
     ClearActiveBeam();
+    EndPhaseWalk();
 
     for (AActor *Wall : BarrierWalls)
     {

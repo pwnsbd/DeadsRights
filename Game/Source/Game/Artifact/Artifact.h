@@ -19,7 +19,8 @@ enum class EArtifactType : uint8
     Beam UMETA(DisplayName = "Beam"),
     PhaseWalk UMETA(DisplayName = "Phase Walk"),
     PathFinder UMETA(DisplayName = "Path Finder"),
-    Barrier UMETA(DisplayName = "Barrier")
+    Barrier UMETA(DisplayName = "Barrier"),
+    AoEBomb UMETA(DisplayName = "AoE Bomb")
 };
 
 UCLASS()
@@ -198,9 +199,42 @@ protected:
     TArray<AActor *> BarrierWalls;
     FTimerHandle BarrierTimer;
 
+    // ==========================================
+    // ABILITY: AOE BOMB
+    // ==========================================
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Artifact|Ability|AoE")
+    float AoEMaxRadius = 600.f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Artifact|Ability|AoE")
+    float AoEPropagationSpeed = 0.08f; // 0.08 is slower than the beam's 0.04!
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Artifact|Ability|AoE")
+    float AoEExpansionStep = 80.f; // Distance between each ring of fire
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Artifact|Ability|AoE")
+    class UParticleSystem *AoEVFX;
+
+    void ActivateAoEBomb();
+    void ExpandAoE();
+    void CleanupAoE();
+
+    FTimerHandle AoEExpansionTimer;
+    FTimerHandle AoECleanupTimer;
+
+    UPROPERTY()
+    TArray<class UParticleSystemComponent *> SpawnedAoEEffects;
+
+    float CurrentAoERadius = 0.f;
+    FVector AoECenterPos;
+    FVector AoEUpDir;
+    FVector AoEForwardAxis;
+
+public:
+    FVector InitialLocation;
+
 private:
     float AccumulatedTime = 0.f;
-    FVector InitialLocation;
+    // FVector InitialLocation;
 
     UFUNCTION()
     void OnOverlapBegin(UPrimitiveComponent *OverlappedComp, AActor *OtherActor, UPrimitiveComponent *OtherComp, int32 OtherBodyIndex, bool bFromSweep, const FHitResult &SweepResult);

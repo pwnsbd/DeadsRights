@@ -90,22 +90,32 @@ void AMazeRunner::Die()
 		AArtifact *DroppedArtifact = MyTarget;
 		MyTarget = nullptr;
 
-		if (DroppedArtifact)
+		if (DroppedArtifact && TargetSphere)
 		{
+			// 1. Detach from the AI
 			DroppedArtifact->DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);
+			DroppedArtifact->AttachToActor(TargetSphere, FAttachmentTransformRules::KeepWorldTransform);
 
-			if (TargetSphere)
-			{
-				DroppedArtifact->AttachToActor(TargetSphere, FAttachmentTransformRules::KeepWorldTransform);
-				// FIX 1: Tell the manager exactly what cell the AI died on!
-				DroppedArtifact->CurrentCell = TargetSphere->WorldToMazeCell(GetActorLocation());
-			}
+			// 2. Calculate the EXACT grid cell the AI died on
+			FMazeNode DeathNode = TargetSphere->WorldToMazeCell(GetActorLocation());
+			DroppedArtifact->CurrentCell = DeathNode;
 
-			DroppedArtifact->SetActorLocation(GetActorLocation());
+			// 3. Snap the artifact perfectly to the surface of that cell
+			FVector CellCenter = TargetSphere->GetCellCenterWorld(DeathNode.Face, DeathNode.X, DeathNode.Y);
+			FVector UpDir = (CellCenter - TargetSphere->GetActorLocation()).GetSafeNormal();
+
+			FVector DropLocation = CellCenter + (UpDir * DroppedArtifact->IdleSurfaceOffset);
+			FRotator DropRotation = FRotationMatrix::MakeFromZ(UpDir).Rotator();
+
+			DroppedArtifact->SetActorLocation(DropLocation);
+			DroppedArtifact->SetActorRotation(DropRotation);
+
+			// 4. FIX: Update InitialLocation so the bobbing animation doesn't warp it away!
+			DroppedArtifact->InitialLocation = DropLocation;
+
+			// 5. Make it visible and interactable again
 			DroppedArtifact->SetActorHiddenInGame(false);
 			DroppedArtifact->SetActorEnableCollision(true);
-
-			// FIX 2: Officially tell the game the item is dropped!
 			DroppedArtifact->bIsCarried = false;
 			DroppedArtifact->Carrier = nullptr;
 		}
@@ -118,7 +128,8 @@ void AMazeRunner::NotifyActorBeginOverlap(AActor *OtherActor)
 {
 	if (OtherActor && OtherActor->IsA(APawn::StaticClass()))
 	{
-		// Keep it clean: If the player overlaps us, just run the exact same death logic!
+		// Keep it perfectly clean: If the player tackles us,
+		// just run the exact same foolproof death logic!
 		Die();
 	}
 }
@@ -138,7 +149,7 @@ void AMazeRunner::Tick(float DeltaTime)
 
 	// --- NEW: Foolproof Player Collision Check ---
 	// If Unreal's physics engine fails to register the overlap, this math will catch it!
-	if (DistToPlayer < 25.0f)
+	if (DistToPlayer < 50.0f)
 	{
 		Die();
 		return; // Stop ticking, we are dead!
@@ -244,33 +255,6 @@ void AMazeRunner::Tick(float DeltaTime)
 		SetActorRelativeRotation(FRotationMatrix::MakeFromXZ(ForwardDir, NewLocal.GetSafeNormal()).Rotator());
 	}
 }
-
-// void AMazeRunner::NotifyActorBeginOverlap(AActor *OtherActor)
-// {
-// 	if (OtherActor && OtherActor->IsA(APawn::StaticClass()))
-// 	{
-// 		GetWorldTimerManager().ClearTimer(EscapeTimerHandle);
-
-// 		// If we are killed while holding the artifact, drop it back onto the sphere
-// 		if (MyTarget && CurrentState == EAIState::Escaping)
-// 		{
-// 			AArtifact *DroppedArtifact = MyTarget;
-// 			MyTarget = nullptr;
-
-// 			DroppedArtifact->DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);
-// 			if (TargetSphere)
-// 				DroppedArtifact->AttachToActor(TargetSphere, FAttachmentTransformRules::KeepWorldTransform);
-
-// 			DroppedArtifact->SetActorLocation(GetActorLocation());
-// 			DroppedArtifact->SetActorHiddenInGame(false);
-// 			DroppedArtifact->SetActorEnableCollision(true);
-// 			DroppedArtifact->bIsCarried = false;
-// 			DroppedArtifact->Carrier = nullptr;
-// 		}
-
-// 		this->Destroy();
-// 	}
-// }
 
 void AMazeRunner::FinishEscape()
 {

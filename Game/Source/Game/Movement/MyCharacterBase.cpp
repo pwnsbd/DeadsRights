@@ -188,6 +188,7 @@ void AMyCharacterBase::RefreshAfterMazeRebuild()
 	TweenAlpha = 0.f;
 	bMoveQueued = false;
 	bCamInit = false;
+	bIsPhasing = false;
 
 	CacheCharacterComponents();
 
@@ -891,6 +892,10 @@ bool AMyCharacterBase::AddArtifactToInventory(AArtifact *Artifact)
 	case EArtifactType::Barrier:
 		Item.ItemName = TEXT("Blue Barrier");
 		Item.CooldownDuration = 10.f;
+		break;
+	case EArtifactType::AoEBomb:
+		Item.ItemName = TEXT("Orange AoE Bomb");
+		Item.CooldownDuration = 4.f;
 		break;
 	default:
 		Item.ItemName = TEXT("Unknown Artifact");
