@@ -275,30 +275,27 @@ void AMazeArtifactManager::SpawnArtifacts()
         NewArtifact->AIPawn = AIPawn;
         NewArtifact->CurrentCell = SpawnCell;
 
-        // switch (i % 5)
-        // {
-        // case 0:
-        //     NewArtifact->ArtifactType = EArtifactType::Beam;
-        //     break;
-        // case 1:
-        //     NewArtifact->ArtifactType = EArtifactType::PhaseWalk;
-        //     break;
-        // case 2:
-        //     NewArtifact->ArtifactType = EArtifactType::PathFinder;
-        //     break;
-        // case 3:
-        //     NewArtifact->ArtifactType = EArtifactType::Barrier;
-        //     break;
-        // case 4:
-        //     NewArtifact->ArtifactType = EArtifactType::AoEBomb;
-        //     break;
-        // default:
-        //     NewArtifact->ArtifactType = EArtifactType::Beam;
-        //     break;
-        // }
-
-        // For testing: override with debug type if set
-        NewArtifact->ArtifactType = EArtifactType::AoEBomb;
+        switch (i % 5)
+        {
+        case 0:
+            NewArtifact->ArtifactType = EArtifactType::Beam;
+            break;
+        case 1:
+            NewArtifact->ArtifactType = EArtifactType::PhaseWalk;
+            break;
+        case 2:
+            NewArtifact->ArtifactType = EArtifactType::PathFinder;
+            break;
+        case 3:
+            NewArtifact->ArtifactType = EArtifactType::Barrier;
+            break;
+        case 4:
+            NewArtifact->ArtifactType = EArtifactType::AoEBomb;
+            break;
+        default:
+            NewArtifact->ArtifactType = EArtifactType::Beam;
+            break;
+        }
 
         NewArtifact->ApplyDebugVisuals();
 
