@@ -22,14 +22,18 @@
 
 namespace
 {
-	const TCHAR* DirName(EMazeDir Dir)
+	const TCHAR *DirName(EMazeDir Dir)
 	{
 		switch (Dir)
 		{
-		case EMazeDir::N: return TEXT("N");
-		case EMazeDir::E: return TEXT("E");
-		case EMazeDir::S: return TEXT("S");
-		case EMazeDir::W: return TEXT("W");
+		case EMazeDir::N:
+			return TEXT("N");
+		case EMazeDir::E:
+			return TEXT("E");
+		case EMazeDir::S:
+			return TEXT("S");
+		case EMazeDir::W:
+			return TEXT("W");
 		}
 		return TEXT("?");
 	}
@@ -53,9 +57,12 @@ AMyCharacterBase::AMyCharacterBase()
 	static ConstructorHelpers::FObjectFinder<UInputAction> LookFinder(
 		TEXT("/Game/IA_Look.IA_Look"));
 
-	if (!GridInputContext && IMCFinder.Succeeded())  GridInputContext = IMCFinder.Object;
-	if (!IA_Move       && MoveFinder.Succeeded())   IA_Move          = MoveFinder.Object;
-	if (!IA_Look       && LookFinder.Succeeded())   IA_Look          = LookFinder.Object;
+	if (!GridInputContext && IMCFinder.Succeeded())
+		GridInputContext = IMCFinder.Object;
+	if (!IA_Move && MoveFinder.Succeeded())
+		IA_Move = MoveFinder.Object;
+	if (!IA_Look && LookFinder.Succeeded())
+		IA_Look = LookFinder.Object;
 }
 
 // =============================================================================
@@ -65,9 +72,9 @@ AMyCharacterBase::AMyCharacterBase()
 void AMyCharacterBase::CacheCharacterComponents()
 {
 	CapsuleComp = FindComponentByClass<UCapsuleComponent>();
-	CameraComp  = FindComponentByClass<UCameraComponent>();
+	CameraComp = FindComponentByClass<UCameraComponent>();
 
-	TArray<UStaticMeshComponent*> Meshes;
+	TArray<UStaticMeshComponent *> Meshes;
 	GetComponents<UStaticMeshComponent>(Meshes);
 	PawnMeshComp = Meshes.Num() > 0 ? Meshes[0] : nullptr;
 
@@ -76,7 +83,7 @@ void AMyCharacterBase::CacheCharacterComponents()
 	if (CapsuleComp)
 	{
 		CapsuleComp->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
-		CapsuleComp->SetCollisionResponseToChannel(ECC_WorldStatic,  ECR_Ignore);
+		CapsuleComp->SetCollisionResponseToChannel(ECC_WorldStatic, ECR_Ignore);
 		CapsuleComp->SetCollisionResponseToChannel(ECC_WorldDynamic, ECR_Ignore);
 	}
 }
@@ -108,16 +115,16 @@ void AMyCharacterBase::Tick(float DeltaSeconds)
 // SetupPlayerInputComponent
 // =============================================================================
 
-void AMyCharacterBase::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
+void AMyCharacterBase::SetupPlayerInputComponent(UInputComponent *PlayerInputComponent)
 {
 	Super::SetupPlayerInputComponent(PlayerInputComponent);
 
-	if (APlayerController* PC = Cast<APlayerController>(GetController()))
+	if (APlayerController *PC = Cast<APlayerController>(GetController()))
 	{
-		if (ULocalPlayer* LP = PC->GetLocalPlayer())
+		if (ULocalPlayer *LP = PC->GetLocalPlayer())
 		{
-			if (UEnhancedInputLocalPlayerSubsystem* Sub =
-				LP->GetSubsystem<UEnhancedInputLocalPlayerSubsystem>())
+			if (UEnhancedInputLocalPlayerSubsystem *Sub =
+					LP->GetSubsystem<UEnhancedInputLocalPlayerSubsystem>())
 			{
 				if (GridInputContext)
 				{
@@ -128,14 +135,14 @@ void AMyCharacterBase::SetupPlayerInputComponent(UInputComponent* PlayerInputCom
 		}
 	}
 
-	if (UEnhancedInputComponent* EIC = Cast<UEnhancedInputComponent>(PlayerInputComponent))
+	if (UEnhancedInputComponent *EIC = Cast<UEnhancedInputComponent>(PlayerInputComponent))
 	{
 		if (IA_Move)
 		{
 			// Triggered fires every frame while held → smooth hold-to-move.
 			// Completed clears the queue so the character stops cleanly on release.
-			EIC->BindAction(IA_Move, ETriggerEvent::Triggered,  this, &AMyCharacterBase::HandleMoveInput);
-			EIC->BindAction(IA_Move, ETriggerEvent::Completed,  this, &AMyCharacterBase::HandleMoveReleased);
+			EIC->BindAction(IA_Move, ETriggerEvent::Triggered, this, &AMyCharacterBase::HandleMoveInput);
+			EIC->BindAction(IA_Move, ETriggerEvent::Completed, this, &AMyCharacterBase::HandleMoveReleased);
 		}
 
 		// Mouse look fires every frame while the mouse is moving.
@@ -143,22 +150,23 @@ void AMyCharacterBase::SetupPlayerInputComponent(UInputComponent* PlayerInputCom
 			EIC->BindAction(IA_Look, ETriggerEvent::Triggered, this, &AMyCharacterBase::HandleLookInput);
 	}
 
-	//Artifact Triggers!!!!
+	// Artifact Triggers!!!!
 	InputComponent->BindKey(EKeys::One, IE_Pressed, this, &AMyCharacterBase::UseArtifactSlot1);
 	InputComponent->BindKey(EKeys::Two, IE_Pressed, this, &AMyCharacterBase::UseArtifactSlot2);
 	InputComponent->BindKey(EKeys::Three, IE_Pressed, this, &AMyCharacterBase::UseArtifactSlot3);
 	InputComponent->BindKey(EKeys::Four, IE_Pressed, this, &AMyCharacterBase::UseArtifactSlot4);
+	InputComponent->BindKey(EKeys::Five, IE_Pressed, this, &AMyCharacterBase::UseArtifactSlot5);
 }
 
 // =============================================================================
 // CalcCamera  —  reads pre-computed state from UpdateCamera()
 // =============================================================================
 
-void AMyCharacterBase::CalcCamera(float DeltaTime, FMinimalViewInfo& OutResult)
+void AMyCharacterBase::CalcCamera(float DeltaTime, FMinimalViewInfo &OutResult)
 {
-	OutResult.Location              = CamWorldPos;
-	OutResult.Rotation              = CamQuat.Rotator();
-	OutResult.FOV                   = CameraFOV;
+	OutResult.Location = CamWorldPos;
+	OutResult.Rotation = CamQuat.Rotator();
+	OutResult.FOV = CameraFOV;
 	OutResult.bConstrainAspectRatio = false;
 }
 
@@ -167,20 +175,21 @@ void AMyCharacterBase::CalcCamera(float DeltaTime, FMinimalViewInfo& OutResult)
 // =============================================================================
 
 void AMyCharacterBase::InitializeMazeReferences(
-	AOrchestrator* InOrchestrator, ACubeToSphere* InSphere, UMaze* InMaze)
+	AOrchestrator *InOrchestrator, ACubeToSphere *InSphere, UMaze *InMaze)
 {
 	Orchestrator = InOrchestrator;
-	Sphere       = InSphere;
-	Maze         = InMaze;
+	Sphere = InSphere;
+	Maze = InMaze;
 }
 
 void AMyCharacterBase::RefreshAfterMazeRebuild()
 {
 	// Reset all runtime state so a rebuild starts clean.
 	bTweenActive = false;
-	TweenAlpha   = 0.f;
-	bMoveQueued  = false;
-	bCamInit     = false;
+	TweenAlpha = 0.f;
+	bMoveQueued = false;
+	bCamInit = false;
+	bIsPhasing = false;
 
 	CacheCharacterComponents();
 
@@ -214,7 +223,9 @@ void AMyCharacterBase::RefreshAfterMazeRebuild()
 			int32 SF, SX, SY;
 			if (FindClosestCell(SpawnTransform.GetLocation(), SF, SX, SY))
 			{
-				Face = SF; X = SX; Y = SY;
+				Face = SF;
+				X = SX;
+				Y = SY;
 				bFoundCell = true;
 			}
 		}
@@ -222,7 +233,9 @@ void AMyCharacterBase::RefreshAfterMazeRebuild()
 
 	if (!bFoundCell)
 	{
-		Face = StartFace; X = StartX; Y = StartY;
+		Face = StartFace;
+		X = StartX;
+		Y = StartY;
 	}
 
 	SnapToCurrentCell();
@@ -237,14 +250,16 @@ void AMyCharacterBase::RefreshAfterMazeRebuild()
 			CamFollowDir = Seed;
 	}
 
-	if (bAutoLogCurrentMazeFace) DumpCurrentMazeFaceAscii();
+	if (bAutoLogCurrentMazeFace)
+		DumpCurrentMazeFaceAscii();
 
 	// Possess, set view target, and capture the mouse for GTA-style look.
-	if (UWorld* W = GetWorld())
+	if (UWorld *W = GetWorld())
 	{
-		if (APlayerController* PC = W->GetFirstPlayerController())
+		if (APlayerController *PC = W->GetFirstPlayerController())
 		{
-			if (PC->GetPawn() != this) PC->Possess(this);
+			if (PC->GetPawn() != this)
+				PC->Possess(this);
 			PC->SetViewTargetWithBlend(this, 0.f);
 			PC->SetInputMode(FInputModeGameOnly());
 			PC->SetShowMouseCursor(false);
@@ -258,7 +273,9 @@ void AMyCharacterBase::RefreshAfterMazeRebuild()
 
 FTransform AMyCharacterBase::PlaceOnCell(int32 InFace, int32 InX, int32 InY)
 {
-	Face = InFace; X = InX; Y = InY;
+	Face = InFace;
+	X = InX;
+	Y = InY;
 	SnapToCurrentCell();
 	return GetActorTransform();
 }
@@ -267,13 +284,15 @@ FTransform AMyCharacterBase::PlaceOnCell(int32 InFace, int32 InX, int32 InY)
 // Input handler
 // =============================================================================
 
-void AMyCharacterBase::HandleMoveInput(const FInputActionValue& Value)
+void AMyCharacterBase::HandleMoveInput(const FInputActionValue &Value)
 {
-	if (bInputFrozen) return;
+	if (bInputFrozen)
+		return;
 	const FVector2D Axis = Value.Get<FVector2D>(); // X = right (D/A), Y = forward (W/S)
-	if (Axis.IsNearlyZero()) return;
+	if (Axis.IsNearlyZero())
+		return;
 
-	const FVector CharPos    = GetActorLocation();
+	const FVector CharPos = GetActorLocation();
 	const FVector SurfNormal = (CharPos - GetSphereCenter()).GetSafeNormal();
 
 	// Screen directions come from the camera's own orientation quaternion.
@@ -281,13 +300,13 @@ void AMyCharacterBase::HandleMoveInput(const FInputActionValue& Value)
 	//   GetAxisX() = camera forward  = what W should move toward
 	//   GetAxisY() = camera right    = what D should move toward
 	// Both are projected to the tangent plane so they stay on the sphere surface.
-	FVector ScreenFwd   = FVector::VectorPlaneProject(CamQuat.GetAxisX(), SurfNormal).GetSafeNormal();
+	FVector ScreenFwd = FVector::VectorPlaneProject(CamQuat.GetAxisX(), SurfNormal).GetSafeNormal();
 	FVector ScreenRight = FVector::VectorPlaneProject(CamQuat.GetAxisY(), SurfNormal).GetSafeNormal();
 
 	// Fallback if camera hasn't initialised yet.
 	if (!bCamInit || ScreenFwd.IsNearlyZero())
 	{
-		ScreenFwd   = FVector::VectorPlaneProject(CamFollowDir,                        SurfNormal).GetSafeNormal();
+		ScreenFwd = FVector::VectorPlaneProject(CamFollowDir, SurfNormal).GetSafeNormal();
 		ScreenRight = FVector::VectorPlaneProject(FVector::CrossProduct(SurfNormal, ScreenFwd), SurfNormal).GetSafeNormal();
 	}
 
@@ -301,20 +320,25 @@ void AMyCharacterBase::HandleMoveInput(const FInputActionValue& Value)
 	// Snap camera to nearest 90° cardinal so diagonal yaw never causes ambiguous
 	// direction resolution.  Snap target is computed relative to character forward.
 	{
-		const FVector CharFwd   = FVector::VectorPlaneProject(
-		                              GetActorQuat().GetAxisX(), SurfNormal).GetSafeNormal();
+		const FVector CharFwd = FVector::VectorPlaneProject(
+									GetActorQuat().GetAxisX(), SurfNormal)
+									.GetSafeNormal();
 		const FVector CharRight = FVector::CrossProduct(SurfNormal, CharFwd).GetSafeNormal();
 
-		const FVector Cardinals[4] = { CharFwd, CharRight, -CharFwd, -CharRight };
-		float   BestDot = -2.f;
+		const FVector Cardinals[4] = {CharFwd, CharRight, -CharFwd, -CharRight};
+		float BestDot = -2.f;
 		FVector BestDir = CharFwd;
-		for (const FVector& C : Cardinals)
+		for (const FVector &C : Cardinals)
 		{
 			const float D = FVector::DotProduct(CamFollowDir, C);
-			if (D > BestDot) { BestDot = D; BestDir = C; }
+			if (D > BestDot)
+			{
+				BestDot = D;
+				BestDir = C;
+			}
 		}
 		CamSnapTarget = BestDir;
-		bCamSnapping  = true;
+		bCamSnapping = true;
 	}
 
 	TryMove(ResolveDir(MoveDir));
@@ -324,7 +348,7 @@ void AMyCharacterBase::HandleMoveInput(const FInputActionValue& Value)
 // HandleMoveReleased  —  key up: cancel any pending queued step
 // =============================================================================
 
-void AMyCharacterBase::HandleMoveReleased(const FInputActionValue& /*Value*/)
+void AMyCharacterBase::HandleMoveReleased(const FInputActionValue & /*Value*/)
 {
 	bMoveQueued = false;
 }
@@ -333,11 +357,13 @@ void AMyCharacterBase::HandleMoveReleased(const FInputActionValue& /*Value*/)
 // HandleLookInput  —  mouse orbit
 // =============================================================================
 
-void AMyCharacterBase::HandleLookInput(const FInputActionValue& Value)
+void AMyCharacterBase::HandleLookInput(const FInputActionValue &Value)
 {
-	if (bInputFrozen) return;
+	if (bInputFrozen)
+		return;
 	const FVector2D Delta = Value.Get<FVector2D>(); // X = horizontal, Y = vertical
-	if (Delta.IsNearlyZero()) return;
+	if (Delta.IsNearlyZero())
+		return;
 
 	// Mouse overrides any in-progress cardinal snap.
 	bCamSnapping = false;
@@ -349,9 +375,9 @@ void AMyCharacterBase::HandleLookInput(const FInputActionValue& Value)
 	// appears to turn left (same convention as GTA / most TPS games).
 	if (FMath::Abs(Delta.X) > KINDA_SMALL_NUMBER)
 	{
-		const FQuat   YawQ        = FQuat(SurfNorm,
-		                                  FMath::DegreesToRadians(-Delta.X * MouseSensitivity));
-		const FVector Rotated     = YawQ.RotateVector(CamFollowDir);
+		const FQuat YawQ = FQuat(SurfNorm,
+								 FMath::DegreesToRadians(-Delta.X * MouseSensitivity));
+		const FVector Rotated = YawQ.RotateVector(CamFollowDir);
 		const FVector Reprojected = FVector::VectorPlaneProject(Rotated, SurfNorm).GetSafeNormal();
 		if (!Reprojected.IsNearlyZero())
 			CamFollowDir = Reprojected;
@@ -361,10 +387,10 @@ void AMyCharacterBase::HandleLookInput(const FInputActionValue& Value)
 	// Mouse up (positive Delta.Y) raises the camera by default; flip with bInvertMouseY.
 	if (FMath::Abs(Delta.Y) > KINDA_SMALL_NUMBER)
 	{
-		const float Sign  = bInvertMouseY ? 1.f : -1.f;
-		CameraPitchAngle  = FMath::Clamp(
-		                        CameraPitchAngle + Sign * Delta.Y * MouseSensitivity,
-		                        5.f, 75.f);
+		const float Sign = bInvertMouseY ? 1.f : -1.f;
+		CameraPitchAngle = FMath::Clamp(
+			CameraPitchAngle + Sign * Delta.Y * MouseSensitivity,
+			5.f, 75.f);
 	}
 }
 
@@ -378,28 +404,37 @@ bool AMyCharacterBase::TryMove(EMazeDir Dir)
 	if (bTweenActive)
 	{
 		bMoveQueued = true;
-		QueuedDir   = Dir;
+		QueuedDir = Dir;
 		return false;
 	}
 
-	if (!Maze || !Sphere) return false;
+	if (!Maze || !Sphere)
+		return false;
 
 	// Wall check.
-	const FMazeCell& Cell = Maze->GetCell(Face, X, Y);
-	if (!IsOpen(Cell, Dir)) return false;
+	const FMazeCell &Cell = Maze->GetCell(Face, X, Y);
+
+	// If we are phasing, completely ignore the wall check and walk right through!
+	if (!bIsPhasing && !IsOpen(Cell, Dir))
+	{
+		return false;
+	}
 
 	// Locate neighbour (handles face transitions).
 	const FMazeNode NeighborNode = Maze->GetNeighborCell(FMazeNode(Face, X, Y), Dir, true);
-	if (!Maze->IsValid(NeighborNode.Face, NeighborNode.X, NeighborNode.Y)) return false;
+	if (!Maze->IsValid(NeighborNode.Face, NeighborNode.X, NeighborNode.Y))
+		return false;
 
 	const int32 NewFace = NeighborNode.Face;
-	const int32 NewX    = NeighborNode.X;
-	const int32 NewY    = NeighborNode.Y;
+	const int32 NewX = NeighborNode.X;
+	const int32 NewY = NeighborNode.Y;
 
 	StartTween(Face, X, Y, NewFace, NewX, NewY);
 
 	// Update logical position immediately so queued moves resolve correctly.
-	Face = NewFace; X = NewX; Y = NewY;
+	Face = NewFace;
+	X = NewX;
+	Y = NewY;
 	return true;
 }
 
@@ -417,7 +452,7 @@ void AMyCharacterBase::StartTween(
 	const FVector NewSurfPos = GetCellSurfacePos(NewFace, NewX, NewY);
 
 	TweenFromNormal = (OldSurfPos - TweenSphereCenter).GetSafeNormal();
-	TweenToNormal   = (NewSurfPos - TweenSphereCenter).GetSafeNormal();
+	TweenToNormal = (NewSurfPos - TweenSphereCenter).GetSafeNormal();
 
 	// Radius from sphere centre to where the character's feet stand.
 	TweenRadius = FVector::Dist(TweenSphereCenter, GetCharStandPos(OldFace, OldX, OldY));
@@ -428,7 +463,7 @@ void AMyCharacterBase::StartTween(
 	const float Dot = FVector::DotProduct(TweenToNormal, TweenFromNormal);
 	TweenMoveDir = (TweenToNormal - Dot * TweenFromNormal).GetSafeNormal();
 
-	TweenAlpha   = 0.f;
+	TweenAlpha = 0.f;
 	bTweenActive = true;
 }
 
@@ -438,7 +473,8 @@ void AMyCharacterBase::StartTween(
 
 void AMyCharacterBase::UpdateTween(float DeltaSeconds)
 {
-	if (!bTweenActive) return;
+	if (!bTweenActive)
+		return;
 
 	TweenAlpha = FMath::Min(TweenAlpha + DeltaSeconds / FMath::Max(StepDuration, 0.001f), 1.f);
 
@@ -446,15 +482,15 @@ void AMyCharacterBase::UpdateTween(float DeltaSeconds)
 	const float SmoothAlpha = FMath::InterpEaseInOut(0.f, 1.f, TweenAlpha, 2.f);
 
 	// Spherical arc: rotate FromNormal toward ToNormal by SmoothAlpha.
-	const FQuat  ArcQuat       = FQuat::FindBetweenNormals(TweenFromNormal, TweenToNormal);
+	const FQuat ArcQuat = FQuat::FindBetweenNormals(TweenFromNormal, TweenToNormal);
 	const FVector CurrentNormal = FQuat::Slerp(FQuat::Identity, ArcQuat, SmoothAlpha)
-	                              .RotateVector(TweenFromNormal);
+									  .RotateVector(TweenFromNormal);
 
 	// Character always stands at TweenRadius above the sphere centre along the current normal.
 	SetActorLocation(TweenSphereCenter + CurrentNormal * TweenRadius);
 
 	// Character rotation: Up = surface normal, Forward = step direction.
-	const FVector CharUp  = CurrentNormal;
+	const FVector CharUp = CurrentNormal;
 	const FVector CharFwd = FVector::VectorPlaneProject(TweenMoveDir, CharUp).GetSafeNormal();
 
 	if (!CharFwd.IsNearlyZero())
@@ -480,21 +516,21 @@ void AMyCharacterBase::FinishTween()
 	// the new one.  This keeps the player's sense of screen direction consistent
 	// across face seams: whatever felt like "right" before the step still feels
 	// like "right" after it.
-	if (!CamFollowDir.IsNearlyZero()
-	    && !TweenFromNormal.IsNearlyZero()
-	    && !TweenToNormal.IsNearlyZero())
+	if (!CamFollowDir.IsNearlyZero() && !TweenFromNormal.IsNearlyZero() && !TweenToNormal.IsNearlyZero())
 	{
-		const FQuat   Arc         = FQuat::FindBetweenNormals(TweenFromNormal, TweenToNormal);
+		const FQuat Arc = FQuat::FindBetweenNormals(TweenFromNormal, TweenToNormal);
 		const FVector Transported = FVector::VectorPlaneProject(
-		                                Arc.RotateVector(CamFollowDir),
-		                                TweenToNormal).GetSafeNormal();
+										Arc.RotateVector(CamFollowDir),
+										TweenToNormal)
+										.GetSafeNormal();
 		if (!Transported.IsNearlyZero())
 			CamFollowDir = Transported;
 	}
 
 	SnapToCurrentCell(); // Face/X/Y already point to the new cell
 
-	if (bAutoLogCurrentMazeFace) DumpCurrentMazeFaceAscii();
+	if (bAutoLogCurrentMazeFace)
+		DumpCurrentMazeFaceAscii();
 
 	if (bMoveQueued)
 	{
@@ -509,7 +545,8 @@ void AMyCharacterBase::FinishTween()
 
 void AMyCharacterBase::SnapToCurrentCell()
 {
-	if (!Sphere) return;
+	if (!Sphere)
+		return;
 
 	SetActorLocation(GetCharStandPos(Face, X, Y));
 
@@ -538,27 +575,30 @@ void AMyCharacterBase::SnapToCurrentCell()
 // Uses actual cell world positions — no face-local rotation tables — so it works
 // identically on all 6 faces including the poles.
 
-EMazeDir AMyCharacterBase::ResolveDir(const FVector& WorldDir) const
+EMazeDir AMyCharacterBase::ResolveDir(const FVector &WorldDir) const
 {
-	if (!Sphere || !Maze) return EMazeDir::N;
+	if (!Sphere || !Maze)
+		return EMazeDir::N;
 
 	const FVector CellCenter = GetCellSurfacePos(Face, X, Y);
 	const FVector SurfNormal = (CellCenter - GetSphereCenter()).GetSafeNormal();
 
 	// Project input direction onto the tangent plane.
 	const FVector TangDir = FVector::VectorPlaneProject(WorldDir, SurfNormal).GetSafeNormal();
-	if (TangDir.IsNearlyZero()) return EMazeDir::N;
+	if (TangDir.IsNearlyZero())
+		return EMazeDir::N;
 
-	float    BestDot = -2.f;
+	float BestDot = -2.f;
 	EMazeDir BestDir = EMazeDir::N;
 
-	for (EMazeDir Dir : { EMazeDir::N, EMazeDir::E, EMazeDir::S, EMazeDir::W })
+	for (EMazeDir Dir : {EMazeDir::N, EMazeDir::E, EMazeDir::S, EMazeDir::W})
 	{
 		const FMazeNode Neighbor = Maze->GetNeighborCell(FMazeNode(Face, X, Y), Dir, true);
-		if (!Maze->IsValid(Neighbor.Face, Neighbor.X, Neighbor.Y)) continue;
+		if (!Maze->IsValid(Neighbor.Face, Neighbor.X, Neighbor.Y))
+			continue;
 
 		const FVector NeighborPos = GetCellSurfacePos(Neighbor.Face, Neighbor.X, Neighbor.Y);
-		const FVector ToNeighbor  = (NeighborPos - CellCenter).GetSafeNormal();
+		const FVector ToNeighbor = (NeighborPos - CellCenter).GetSafeNormal();
 
 		const float Dot = FVector::DotProduct(TangDir, ToNeighbor);
 		if (Dot > BestDot)
@@ -575,14 +615,18 @@ EMazeDir AMyCharacterBase::ResolveDir(const FVector& WorldDir) const
 // IsOpen
 // =============================================================================
 
-bool AMyCharacterBase::IsOpen(const FMazeCell& Cell, EMazeDir Dir) const
+bool AMyCharacterBase::IsOpen(const FMazeCell &Cell, EMazeDir Dir) const
 {
 	switch (Dir)
 	{
-	case EMazeDir::N: return Cell.OpenN;
-	case EMazeDir::E: return Cell.OpenE;
-	case EMazeDir::S: return Cell.OpenS;
-	case EMazeDir::W: return Cell.OpenW;
+	case EMazeDir::N:
+		return Cell.OpenN;
+	case EMazeDir::E:
+		return Cell.OpenE;
+	case EMazeDir::S:
+		return Cell.OpenS;
+	case EMazeDir::W:
+		return Cell.OpenW;
 	}
 	return false;
 }
@@ -595,22 +639,25 @@ FVector AMyCharacterBase::GetSphereCenter() const
 {
 	// Use Orchestrator location — the fixed rotation pivot.
 	// Sphere (child actor) drifts when the Orchestrator rotates.
-	if (Orchestrator) return Orchestrator->GetActorLocation();
-	if (Sphere)       return Sphere->GetActorLocation();
+	if (Orchestrator)
+		return Orchestrator->GetActorLocation();
+	if (Sphere)
+		return Sphere->GetActorLocation();
 	return FVector::ZeroVector;
 }
 
 FVector AMyCharacterBase::GetCellSurfacePos(int32 InFace, int32 InX, int32 InY) const
 {
-	if (Sphere) return Sphere->GetCellCenterWorld(InFace, InX, InY);
+	if (Sphere)
+		return Sphere->GetCellCenterWorld(InFace, InX, InY);
 	return FVector::ZeroVector;
 }
 
 FVector AMyCharacterBase::GetCharStandPos(int32 InFace, int32 InX, int32 InY) const
 {
-	const FVector SurfPos   = GetCellSurfacePos(InFace, InX, InY);
+	const FVector SurfPos = GetCellSurfacePos(InFace, InX, InY);
 	const FVector SphCenter = GetSphereCenter();
-	const FVector Normal    = (SurfPos - SphCenter).GetSafeNormal();
+	const FVector Normal = (SurfPos - SphCenter).GetSafeNormal();
 	return SurfPos + Normal * StepHeightOffset;
 }
 
@@ -629,16 +676,17 @@ FVector AMyCharacterBase::GetCharStandPos(int32 InFace, int32 InX, int32 InY) co
 
 void AMyCharacterBase::UpdateCamera(float DeltaSeconds)
 {
-	if (!Sphere) return;
+	if (!Sphere)
+		return;
 
-	const FVector CharPos   = GetActorLocation();
+	const FVector CharPos = GetActorLocation();
 	const FVector SphCenter = GetSphereCenter();
-	const FVector SurfNorm  = (CharPos - SphCenter).GetSafeNormal();
+	const FVector SurfNorm = (CharPos - SphCenter).GetSafeNormal();
 
 	// ---- Target position: behind and above character ----
-	const float PitchRad  = FMath::DegreesToRadians(FMath::Clamp(CameraPitchAngle, 0.f, 89.f));
+	const float PitchRad = FMath::DegreesToRadians(FMath::Clamp(CameraPitchAngle, 0.f, 89.f));
 	const float HorizDist = CameraArmLength * FMath::Cos(PitchRad);
-	const float VertDist  = CameraArmLength * FMath::Sin(PitchRad);
+	const float VertDist = CameraArmLength * FMath::Sin(PitchRad);
 
 	// ---- Cardinal snap: smoothly rotate CamFollowDir toward the nearest 90° ----
 	if (bCamSnapping && !CamSnapTarget.IsNearlyZero())
@@ -648,16 +696,17 @@ void AMyCharacterBase::UpdateCamera(float DeltaSeconds)
 		{
 			// Angle remaining between current direction and target.
 			const float AngleRad = FMath::Acos(
-			    FMath::Clamp(FVector::DotProduct(CamFollowDir, SnapDir), -1.f, 1.f));
-			const float StepRad  = FMath::DegreesToRadians(CameraSnapSpeed) * DeltaSeconds;
-			const float T        = (AngleRad > KINDA_SMALL_NUMBER)
-			                       ? FMath::Min(StepRad / AngleRad, 1.f)
-			                       : 1.f;
+				FMath::Clamp(FVector::DotProduct(CamFollowDir, SnapDir), -1.f, 1.f));
+			const float StepRad = FMath::DegreesToRadians(CameraSnapSpeed) * DeltaSeconds;
+			const float T = (AngleRad > KINDA_SMALL_NUMBER)
+								? FMath::Min(StepRad / AngleRad, 1.f)
+								: 1.f;
 
 			const FQuat Arc = FQuat::FindBetweenNormals(CamFollowDir, SnapDir);
 			CamFollowDir = FVector::VectorPlaneProject(
-			    FQuat::Slerp(FQuat::Identity, Arc, T).RotateVector(CamFollowDir),
-			    SurfNorm).GetSafeNormal();
+							   FQuat::Slerp(FQuat::Identity, Arc, T).RotateVector(CamFollowDir),
+							   SurfNorm)
+							   .GetSafeNormal();
 
 			if (T >= 1.f)
 			{
@@ -672,8 +721,8 @@ void AMyCharacterBase::UpdateCamera(float DeltaSeconds)
 	if (FollowDir.IsNearlyZero())
 		FollowDir = FVector::VectorPlaneProject(FVector::ForwardVector, SurfNorm).GetSafeNormal();
 
-	const FVector TargetCamPos  = CharPos - FollowDir * HorizDist + SurfNorm * VertDist;
-	const FVector LookTarget    = CharPos + SurfNorm * CameraLookAtHeight;
+	const FVector TargetCamPos = CharPos - FollowDir * HorizDist + SurfNorm * VertDist;
+	const FVector LookTarget = CharPos + SurfNorm * CameraLookAtHeight;
 
 	// ---- Target orientation ----
 	const FVector CamFwd = (LookTarget - TargetCamPos).GetSafeNormal();
@@ -689,8 +738,8 @@ void AMyCharacterBase::UpdateCamera(float DeltaSeconds)
 	if (!bCamInit)
 	{
 		CamWorldPos = TargetCamPos;
-		CamQuat     = TargetQuat;
-		bCamInit    = true;
+		CamQuat = TargetQuat;
+		bCamInit = true;
 		return;
 	}
 
@@ -699,9 +748,9 @@ void AMyCharacterBase::UpdateCamera(float DeltaSeconds)
 
 	// Short-arc guard: negate TargetQuat if it is on the far hemisphere.
 	const FQuat AlignedTarget = ((CamQuat | TargetQuat) >= 0.f)
-	                            ? TargetQuat
-	                            : FQuat(-TargetQuat.X, -TargetQuat.Y,
-	                                    -TargetQuat.Z, -TargetQuat.W);
+									? TargetQuat
+									: FQuat(-TargetQuat.X, -TargetQuat.Y,
+											-TargetQuat.Z, -TargetQuat.W);
 
 	const float RotAlpha = FMath::Clamp(DeltaSeconds * CameraRotationLag, 0.f, 1.f);
 	CamQuat = FQuat::Slerp(CamQuat, AlignedTarget, RotAlpha);
@@ -712,15 +761,17 @@ void AMyCharacterBase::UpdateCamera(float DeltaSeconds)
 		// Yaw: signed angle between CamFollowDir and character forward on the tangent plane.
 		// 0° = camera directly behind, ±180° = camera directly in front.
 		const FVector CharFwd = FVector::VectorPlaneProject(
-		                            GetActorQuat().GetAxisX(), SurfNorm).GetSafeNormal();
-		const float   CosYaw  = FMath::Clamp(FVector::DotProduct(FollowDir, CharFwd), -1.f, 1.f);
-		const float   YawSign = FVector::DotProduct(
-		                            FVector::CrossProduct(FollowDir, CharFwd), SurfNorm) >= 0.f
-		                        ? 1.f : -1.f;
-		const float   YawDeg  = YawSign * FMath::RadiansToDegrees(FMath::Acos(CosYaw));
+									GetActorQuat().GetAxisX(), SurfNorm)
+									.GetSafeNormal();
+		const float CosYaw = FMath::Clamp(FVector::DotProduct(FollowDir, CharFwd), -1.f, 1.f);
+		const float YawSign = FVector::DotProduct(
+								  FVector::CrossProduct(FollowDir, CharFwd), SurfNorm) >= 0.f
+								  ? 1.f
+								  : -1.f;
+		const float YawDeg = YawSign * FMath::RadiansToDegrees(FMath::Acos(CosYaw));
 
 		const FString Msg = FString::Printf(
-		    TEXT("Cam Pitch: %.1f°   Cam Yaw: %.1f°"), CameraPitchAngle, YawDeg);
+			TEXT("Cam Pitch: %.1f°   Cam Yaw: %.1f°"), CameraPitchAngle, YawDeg);
 
 		if (GEngine)
 			GEngine->AddOnScreenDebugMessage(42, 0.f, FColor::Cyan, Msg);
@@ -732,13 +783,14 @@ void AMyCharacterBase::UpdateCamera(float DeltaSeconds)
 // =============================================================================
 
 bool AMyCharacterBase::FindClosestCell(
-	const FVector& WorldPos, int32& OutFace, int32& OutX, int32& OutY) const
+	const FVector &WorldPos, int32 &OutFace, int32 &OutX, int32 &OutY) const
 {
-	if (!Sphere || !Maze) return false;
+	if (!Sphere || !Maze)
+		return false;
 
 	float BestDistSq = FLT_MAX;
-	bool  bFound     = false;
-	const int32 CPF  = Maze->CellsPerFace;
+	bool bFound = false;
+	const int32 CPF = Maze->CellsPerFace;
 
 	for (int32 F = 0; F < 6; ++F)
 	{
@@ -747,11 +799,13 @@ bool AMyCharacterBase::FindClosestCell(
 			for (int32 CY = 0; CY < CPF; ++CY)
 			{
 				const float DistSq = FVector::DistSquared(WorldPos,
-				                     Sphere->GetCellCenterWorld(F, CX, CY));
+														  Sphere->GetCellCenterWorld(F, CX, CY));
 				if (DistSq < BestDistSq)
 				{
 					BestDistSq = DistSq;
-					OutFace = F; OutX = CX; OutY = CY;
+					OutFace = F;
+					OutX = CX;
+					OutY = CY;
 					bFound = true;
 				}
 			}
@@ -772,7 +826,8 @@ void AMyCharacterBase::DumpCurrentMazeFaceAscii() const
 
 void AMyCharacterBase::DumpMazeFaceAscii(int32 FaceToDump) const
 {
-	if (!Maze) return;
+	if (!Maze)
+		return;
 
 	const int32 CPF = Maze->CellsPerFace;
 	UE_LOG(LogTemp, Log, TEXT("=== Face %d ==="), FaceToDump);
@@ -782,12 +837,13 @@ void AMyCharacterBase::DumpMazeFaceAscii(int32 FaceToDump) const
 		FString Line;
 		for (int32 Col = 0; Col < CPF; ++Col)
 		{
-			const FMazeCell& Cell = Maze->GetCell(FaceToDump, Col, Row);
+			const FMazeCell &Cell = Maze->GetCell(FaceToDump, Col, Row);
 
 			bool bPlayer = (FaceToDump == Face && Col == X && Row == Y);
 			TCHAR Ch = bPlayer ? TEXT('@') : TEXT('.');
 
-			if (!Cell.OpenN) Ch = (bPlayer ? TEXT('@') : TEXT('#'));
+			if (!Cell.OpenN)
+				Ch = (bPlayer ? TEXT('@') : TEXT('#'));
 			Line.AppendChar(Ch);
 			Line.AppendChar(Cell.OpenE ? TEXT(' ') : TEXT('|'));
 		}
@@ -797,7 +853,7 @@ void AMyCharacterBase::DumpMazeFaceAscii(int32 FaceToDump) const
 		FString WallLine;
 		for (int32 Col = 0; Col < CPF; ++Col)
 		{
-			const FMazeCell& Cell = Maze->GetCell(FaceToDump, Col, Row);
+			const FMazeCell &Cell = Maze->GetCell(FaceToDump, Col, Row);
 			WallLine.AppendChar(Cell.OpenS ? TEXT(' ') : TEXT('-'));
 			WallLine.AppendChar(TEXT(' '));
 		}
@@ -812,10 +868,33 @@ void AMyCharacterBase::DumpAllMazeFacesAscii() const
 		DumpMazeFaceAscii(F);
 	}
 }
-bool AMyCharacterBase::AddArtifactToInventory(AArtifact* Artifact)
+
+bool AMyCharacterBase::AddArtifactToInventory(AArtifact *Artifact)
 {
-	if (!Artifact || !StorageComponent)
+	// 1. CRASH PROTECTION: If we are already carrying this exact item, ignore the duplicate overlap!
+	if (!Artifact || !StorageComponent || Artifact->bIsCarried)
 		return false;
+
+	// --- ABSORB DUPLICATE CHARGES ---
+	for (FStoredItem &ExistingItem : StorageComponent->Slots)
+	{
+		if (IsValid(ExistingItem.SourceActor) && ExistingItem.ItemCategory == static_cast<EItemCategory>(Artifact->ArtifactType))
+		{
+			// 2. DOUBLE-CHECK PROTECTION: Ensure we aren't absorbing ourselves
+			if (ExistingItem.SourceActor == Artifact)
+				continue;
+
+			AArtifact *ExistingArtifact = Cast<AArtifact>(ExistingItem.SourceActor);
+			if (ExistingArtifact)
+			{
+				ExistingArtifact->CurrentCharges += Artifact->MaxCharges;
+				UE_LOG(LogTemp, Warning, TEXT("Absorbed duplicate! %d charges added."), Artifact->MaxCharges);
+			}
+
+			Artifact->Destroy();
+			return true;
+		}
+	}
 
 	FStoredItem Item;
 	Item.ItemCategory = static_cast<EItemCategory>(Artifact->ArtifactType);
@@ -823,23 +902,27 @@ bool AMyCharacterBase::AddArtifactToInventory(AArtifact* Artifact)
 	switch (Artifact->ArtifactType)
 	{
 	case EArtifactType::Beam:
-		Item.ItemName        = TEXT("Red Beam");
+		Item.ItemName = TEXT("Red Beam");
 		Item.CooldownDuration = 3.f;
 		break;
 	case EArtifactType::PhaseWalk:
-		Item.ItemName        = TEXT("Green Phase Walk");
+		Item.ItemName = TEXT("Green Phase Walk");
 		Item.CooldownDuration = 6.f;
 		break;
 	case EArtifactType::PathFinder:
-		Item.ItemName        = TEXT("Yellow Path Finder");
+		Item.ItemName = TEXT("Yellow Path Finder");
 		Item.CooldownDuration = 8.f;
 		break;
 	case EArtifactType::Barrier:
-		Item.ItemName        = TEXT("Blue Barrier");
+		Item.ItemName = TEXT("Blue Barrier");
 		Item.CooldownDuration = 10.f;
 		break;
+	case EArtifactType::AoEBomb:
+		Item.ItemName = TEXT("Orange AoE Bomb");
+		Item.CooldownDuration = 4.f;
+		break;
 	default:
-		Item.ItemName        = TEXT("Unknown Artifact");
+		Item.ItemName = TEXT("Unknown Artifact");
 		Item.CooldownDuration = 5.f;
 		break;
 	}
@@ -851,7 +934,7 @@ bool AMyCharacterBase::AddArtifactToInventory(AArtifact* Artifact)
 
 	// Keep the actor alive but invisible — ability activation needs it
 	Artifact->bIsCarried = true;
-	Artifact->Carrier    = this;
+	Artifact->Carrier = this;
 	Artifact->SetActorHiddenInGame(true);
 	Artifact->SetActorEnableCollision(false);
 	return true;
@@ -859,13 +942,16 @@ bool AMyCharacterBase::AddArtifactToInventory(AArtifact* Artifact)
 
 void AMyCharacterBase::ActivateArtifactInSlot(int32 SlotIndex)
 {
-	if (!StorageComponent || !StorageComponent->Slots.IsValidIndex(SlotIndex)) return;
+	if (!StorageComponent || !StorageComponent->Slots.IsValidIndex(SlotIndex))
+		return;
 
 	// UseSlot handles cooldown — returns false if on cooldown or slot is empty
-	if (!StorageComponent->UseSlot(SlotIndex)) return;
+	if (!StorageComponent->UseSlot(SlotIndex))
+		return;
 
-	AArtifact* Artifact = Cast<AArtifact>(StorageComponent->Slots[SlotIndex].SourceActor);
-	if (!IsValid(Artifact)) return;
+	AArtifact *Artifact = Cast<AArtifact>(StorageComponent->Slots[SlotIndex].SourceActor);
+	if (!IsValid(Artifact))
+		return;
 
 	Artifact->ActivateAbility();
 }
@@ -874,3 +960,4 @@ void AMyCharacterBase::UseArtifactSlot1() { ActivateArtifactInSlot(0); }
 void AMyCharacterBase::UseArtifactSlot2() { ActivateArtifactInSlot(1); }
 void AMyCharacterBase::UseArtifactSlot3() { ActivateArtifactInSlot(2); }
 void AMyCharacterBase::UseArtifactSlot4() { ActivateArtifactInSlot(3); }
+void AMyCharacterBase::UseArtifactSlot5() { ActivateArtifactInSlot(4); }
