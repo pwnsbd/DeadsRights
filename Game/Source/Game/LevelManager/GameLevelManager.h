@@ -107,9 +107,13 @@ protected:
 	UFUNCTION(BlueprintCallable, Category = "Level Manager")
 	void SetupCurrentLevel();
 
-	/** Called when an AI successfully escapes — resets inventory and restarts from Level 1. */
+	/** Called when an AI successfully escapes — stops everything and broadcasts OnGameLostDelegate. */
 	UFUNCTION(BlueprintCallable, Category = "Level Manager")
 	void OnGameLost();
+
+	/** Call this from the "Play Again" button on WBP_Lose — resets state and restarts from Level 1. */
+	UFUNCTION(BlueprintCallable, Category = "Level Manager")
+	void RestartGame();
 
 	/** Polls artifact count; fires when all artifacts are gone. */
 	UFUNCTION(BlueprintCallable, Category = "Level Manager")
@@ -172,8 +176,6 @@ private:
 	/** Repeating 0.5s timer that polls GetRemainingArtifactCount for the win condition. */
 	FTimerHandle WinCheckTimerHandle;
 
-	/** Called after loss delay — resets state and starts countdown for Level 1. */
-	void OnLostRestartCountdown();
 
 	/** Called when remaining artifact count hits 0 — handles win + progression. */
 	void OnLevelWon();

@@ -13,6 +13,7 @@ Saved/
 *.suo
 *.VC.db
 *.VC.opendb
+*.DotSettings.user
 
 # --- Build artifacts / temp ---
 *.tmp

@@ -11,6 +11,9 @@
 
 #include "MyCharacterBase.generated.h"
 
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnActiveSlotChanged, int32, NewSlotIndex);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnDescriptionToggled, bool, bIsOpen);
+
 class AOrchestrator;
 class ACubeToSphere;
 class UMaze;
@@ -133,6 +136,22 @@ public:
 	UPROPERTY(BlueprintReadWrite, Category = "Input")
 	bool bInputFrozen = false;
 
+	/** 0-based index of the currently selected spell slot. Changed by mouse scroll. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Inventory")
+	int32 ActiveSlotIndex = 0;
+
+	/** True while the description panel is toggled open (Tab key). */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Inventory")
+	bool bDescriptionVisible = false;
+
+	/** Fired when scroll moves to a different slot. Bind in HUD to update highlight. */
+	UPROPERTY(BlueprintAssignable, Category = "Inventory")
+	FOnActiveSlotChanged OnActiveSlotChanged;
+
+	/** Fired when Tab toggles the description panel. Bind in HUD to show/hide. */
+	UPROPERTY(BlueprintAssignable, Category = "Inventory")
+	FOnDescriptionToggled OnDescriptionToggled;
+
 	// INPUT HELPERS
 	void UseArtifactSlot1();
 	void UseArtifactSlot2();
@@ -142,6 +161,13 @@ public:
 private:
 	// Shared logic: checks cooldown, activates ability, clears slot if depleted.
 	void ActivateArtifactInSlot(int32 SlotIndex);
+
+	// ---- Spell selection & description ----
+	void ScrollSlotUp();
+	void ScrollSlotDown();
+	void ToggleDescription();
+	void UseActiveSlot();       // right-click — fires the active spell
+	void ScrollSlot(int32 Direction); // shared implementation
 
 	// =========================================================================
 	// Components (cached from Blueprint)

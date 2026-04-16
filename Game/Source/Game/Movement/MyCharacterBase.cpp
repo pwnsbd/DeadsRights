@@ -144,10 +144,16 @@ void AMyCharacterBase::SetupPlayerInputComponent(UInputComponent* PlayerInputCom
 	}
 
 	//Artifact Triggers!!!!
-	InputComponent->BindKey(EKeys::One, IE_Pressed, this, &AMyCharacterBase::UseArtifactSlot1);
-	InputComponent->BindKey(EKeys::Two, IE_Pressed, this, &AMyCharacterBase::UseArtifactSlot2);
+	InputComponent->BindKey(EKeys::One,   IE_Pressed, this, &AMyCharacterBase::UseArtifactSlot1);
+	InputComponent->BindKey(EKeys::Two,   IE_Pressed, this, &AMyCharacterBase::UseArtifactSlot2);
 	InputComponent->BindKey(EKeys::Three, IE_Pressed, this, &AMyCharacterBase::UseArtifactSlot3);
-	InputComponent->BindKey(EKeys::Four, IE_Pressed, this, &AMyCharacterBase::UseArtifactSlot4);
+	InputComponent->BindKey(EKeys::Four,  IE_Pressed, this, &AMyCharacterBase::UseArtifactSlot4);
+
+	// Spell selection & description panel
+	InputComponent->BindKey(EKeys::MouseScrollUp,   IE_Pressed, this, &AMyCharacterBase::ScrollSlotUp);
+	InputComponent->BindKey(EKeys::MouseScrollDown,  IE_Pressed, this, &AMyCharacterBase::ScrollSlotDown);
+	InputComponent->BindKey(EKeys::Tab,              IE_Pressed, this, &AMyCharacterBase::ToggleDescription);
+	InputComponent->BindKey(EKeys::RightMouseButton, IE_Pressed, this, &AMyCharacterBase::UseActiveSlot);
 }
 
 // =============================================================================
@@ -823,31 +829,44 @@ bool AMyCharacterBase::AddArtifactToInventory(AArtifact* Artifact)
 	switch (Artifact->ArtifactType)
 	{
 	case EArtifactType::Beam:
-		Item.ItemName        = TEXT("Red Beam");
+		Item.ItemName         = TEXT("Red Beam");
 		Item.CooldownDuration = 3.f;
+		Item.Description      = TEXT("Fires a beam in your facing direction. Any thief caught in the path is destroyed.");
 		break;
 	case EArtifactType::PhaseWalk:
-		Item.ItemName        = TEXT("Green Phase Walk");
+		Item.ItemName         = TEXT("Green Phase Walk");
 		Item.CooldownDuration = 6.f;
+		Item.Description      = TEXT("Pass through walls for a short time. Use it to escape or cut corners.");
 		break;
 	case EArtifactType::PathFinder:
-		Item.ItemName        = TEXT("Yellow Path Finder");
+		Item.ItemName         = TEXT("Yellow Path Finder");
 		Item.CooldownDuration = 8.f;
+		Item.Description      = TEXT("Reveals the shortest path to the nearest uncollected artifact.");
 		break;
 	case EArtifactType::Barrier:
-		Item.ItemName        = TEXT("Blue Barrier");
+		Item.ItemName         = TEXT("Blue Barrier");
 		Item.CooldownDuration = 10.f;
+		Item.Description      = TEXT("Raises temporary walls around your position, trapping nearby thieves.");
 		break;
 	default:
-		Item.ItemName        = TEXT("Unknown Artifact");
+		Item.ItemName         = TEXT("Unknown Artifact");
 		Item.CooldownDuration = 5.f;
+		Item.Description      = TEXT("");
 		break;
 	}
 
 	Item.SourceActor = Artifact;
 
-	if (StorageComponent->AddItem(Item) == INDEX_NONE)
+	const int32 AddedSlot = StorageComponent->AddItem(Item);
+	if (AddedSlot == INDEX_NONE)
 		return false;
+
+	// If the current ActiveSlot is still empty (game start / after reset), jump to this new slot
+	if (StorageComponent->Slots[ActiveSlotIndex].IsEmpty())
+	{
+		ActiveSlotIndex = AddedSlot;
+		OnActiveSlotChanged.Broadcast(ActiveSlotIndex);
+	}
 
 	// Keep the actor alive but invisible — ability activation needs it
 	Artifact->bIsCarried = true;
@@ -874,3 +893,55 @@ void AMyCharacterBase::UseArtifactSlot1() { ActivateArtifactInSlot(0); }
 void AMyCharacterBase::UseArtifactSlot2() { ActivateArtifactInSlot(1); }
 void AMyCharacterBase::UseArtifactSlot3() { ActivateArtifactInSlot(2); }
 void AMyCharacterBase::UseArtifactSlot4() { ActivateArtifactInSlot(3); }
+
+// ── Spell selection ───────────────────────────────────────────────────────────
+
+void AMyCharacterBase::ScrollSlot(int32 Direction)
+{
+	if (bInputFrozen || !StorageComponent) return;
+	const int32 NumSlots = StorageComponent->Slots.Num();
+	if (NumSlots == 0) return;
+
+	// Slide in Direction (+1 or -1); stop at the boundary — no wrap
+	int32 Next = ActiveSlotIndex;
+	for (int32 i = 0; i < NumSlots; i++)
+	{
+		Next += Direction;
+		if (Next < 0 || Next >= NumSlots) return; // hit the end — stay put
+
+		if (!StorageComponent->Slots[Next].IsEmpty())
+		{
+			ActiveSlotIndex = Next;
+
+			// Close description when switching slots
+			if (bDescriptionVisible)
+			{
+				bDescriptionVisible = false;
+				OnDescriptionToggled.Broadcast(false);
+			}
+
+			OnActiveSlotChanged.Broadcast(ActiveSlotIndex);
+			return;
+		}
+	}
+	// No occupied slot found in that direction — stay put
+}
+
+void AMyCharacterBase::ScrollSlotUp()   { ScrollSlot(-1); }
+void AMyCharacterBase::ScrollSlotDown() { ScrollSlot(+1); }
+
+void AMyCharacterBase::UseActiveSlot()
+{
+	if (bInputFrozen) return;
+	ActivateArtifactInSlot(ActiveSlotIndex);
+}
+
+void AMyCharacterBase::ToggleDescription()
+{
+	if (bInputFrozen || !StorageComponent) return;
+	if (!StorageComponent->Slots.IsValidIndex(ActiveSlotIndex)) return;
+	if (StorageComponent->Slots[ActiveSlotIndex].IsEmpty()) return; // locked slot — do nothing
+
+	bDescriptionVisible = !bDescriptionVisible;
+	OnDescriptionToggled.Broadcast(bDescriptionVisible);
+}

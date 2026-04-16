@@ -294,19 +294,23 @@ int32 AGameLevelManager::GetCurrentLevelInWave() const
 
 // ── Loss Condition ────────────────────────────────────────────────────────────
 
-void AGameLevelManager::OnLostRestartCountdown()
-{
-	UE_LOG(LogTemp, Log, TEXT("[LevelManager] Restarting from Level 1..."));
-	StartCountdown();
-}
-
 void AGameLevelManager::OnGameLost()
 {
 	if (CurrentState != EGameLevelState::Running) return;
 
 	CurrentState = EGameLevelState::GameOver;
+
+	// Stop all timers — nothing should run while the lose screen is up
 	GetWorldTimerManager().ClearTimer(WinCheckTimerHandle);
-	UE_LOG(LogTemp, Log, TEXT("[LevelManager] === GAME LOST! AI stole an artifact. Resetting... ==="));
+	GetWorldTimerManager().ClearTimer(TransitionTimerHandle);
+	GetWorldTimerManager().ClearTimer(CountdownTimerHandle);
+
+	UE_LOG(LogTemp, Log, TEXT("[LevelManager] === GAME LOST on Wave %d! Waiting for player to restart. ==="),
+		GetCurrentWaveNumber());
+
+	// Freeze player input
+	if (PlayerCharacter)
+		PlayerCharacter->bInputFrozen = true;
 
 	// Clear player inventory
 	if (PlayerCharacter && PlayerCharacter->StorageComponent)
@@ -315,27 +319,29 @@ void AGameLevelManager::OnGameLost()
 		PlayerCharacter->StorageComponent->CurrentWaveIndex = 0;
 	}
 
-	// Clear all active runners and artifacts
+	// Destroy all active runners
 	for (AMazeRunner* Runner : Orchestrator->ActiveRunners)
 	{
 		if (IsValid(Runner)) Runner->Destroy();
 	}
 	Orchestrator->ActiveRunners.Empty();
 
+	// Clear artifacts from the world
 	if (Orchestrator->ArtifactManager)
 		Orchestrator->ArtifactManager->ResetForNextLevel();
 
-	// Broadcast so Blueprint can show a loss screen / play audio
+	// Broadcast — Blueprint shows WBP_Lose, waits for the Play Again button
 	OnGameLostDelegate.Broadcast();
+}
 
-	// Restart from first enabled level after a short pause
+void AGameLevelManager::RestartGame()
+{
+	UE_LOG(LogTemp, Log, TEXT("[LevelManager] Restarting from Level 1..."));
+
+	// Reset to the first enabled level
 	CurrentLevelIndex = 0;
-	while (CurrentLevelIndex < LevelConfigs.Num() && !LevelConfigs[CurrentLevelIndex].bEnabled)
+	while (LevelConfigs.IsValidIndex(CurrentLevelIndex) && !LevelConfigs[CurrentLevelIndex].bEnabled)
 		CurrentLevelIndex++;
-	GetWorldTimerManager().SetTimer(
-		TransitionTimerHandle,
-		this,
-		&AGameLevelManager::OnLostRestartCountdown,
-		2.0f,
-		false);
+
+	StartCountdown(); // unfreezes input once countdown completes
 }
