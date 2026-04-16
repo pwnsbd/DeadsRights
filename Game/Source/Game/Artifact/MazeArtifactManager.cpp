@@ -13,7 +13,7 @@
 
 namespace
 {
-    bool IsWithinCellRadius(const FMazeNode& A, const FMazeNode& B, int32 Radius)
+    bool IsWithinCellRadius(const FMazeNode &A, const FMazeNode &B, int32 Radius)
     {
         if (A.Face < 0 || B.Face < 0)
         {
@@ -39,7 +39,6 @@ AMazeArtifactManager::AMazeArtifactManager()
 void AMazeArtifactManager::BeginPlay()
 {
     Super::BeginPlay();
-
 }
 
 void AMazeArtifactManager::Tick(float DeltaSeconds)
@@ -51,7 +50,8 @@ void AMazeArtifactManager::Tick(float DeltaSeconds)
     if (!bHasSpawnedArtifacts)
     {
         // LevelManager owns spawning when bManagedExternally — skip auto-spawn
-        if (bManagedExternally) return;
+        if (bManagedExternally)
+            return;
 
         if (ArtifactClass && Maze && SphereActor)
         {
@@ -64,8 +64,7 @@ void AMazeArtifactManager::Tick(float DeltaSeconds)
     if (!PlayerPawn)
     {
         PlayerPawn = UGameplayStatics::GetPlayerPawn(GetWorld(), 0);
-
-        }
+    }
 
     if (!SphereActor || !PlayerPawn)
     {
@@ -74,7 +73,7 @@ void AMazeArtifactManager::Tick(float DeltaSeconds)
 
     const FMazeNode PlayerNode = SphereActor->WorldToMazeCell(PlayerPawn->GetActorLocation());
 
-    for (AArtifact* Artifact : SpawnedArtifacts)
+    for (AArtifact *Artifact : SpawnedArtifacts)
     {
         if (!IsValid(Artifact))
         {
@@ -89,8 +88,8 @@ void AMazeArtifactManager::Tick(float DeltaSeconds)
         if (Artifact->CurrentCell == PlayerNode)
         {
             UE_LOG(LogTemp, Warning,
-                TEXT("Artifact pickup by cell match  Face=%d X=%d Y=%d"),
-                PlayerNode.Face, PlayerNode.X, PlayerNode.Y);
+                   TEXT("Artifact pickup by cell match  Face=%d X=%d Y=%d"),
+                   PlayerNode.Face, PlayerNode.X, PlayerNode.Y);
 
             Artifact->PickUp(PlayerPawn);
             break;
@@ -103,9 +102,10 @@ void AMazeArtifactManager::ResolveReferences()
     // Find Orchestrator
     for (TActorIterator<AOrchestrator> It(GetWorld()); It; ++It)
     {
-        AOrchestrator* Orch = *It;
+        AOrchestrator *Orch = *It;
 
-        if (!Orch) continue;
+        if (!Orch)
+            continue;
 
         // Pull Maze
         if (!Maze && Orch->GetMaze())
@@ -128,9 +128,9 @@ void AMazeArtifactManager::ResolveReferences()
     }
 }
 
-bool AMazeArtifactManager::IsCellUsed(const FMazeNode& Cell) const
+bool AMazeArtifactManager::IsCellUsed(const FMazeNode &Cell) const
 {
-    for (const FMazeNode& Used : UsedCells)
+    for (const FMazeNode &Used : UsedCells)
     {
         if (Used == Cell)
         {
@@ -143,15 +143,27 @@ bool AMazeArtifactManager::IsCellUsed(const FMazeNode& Cell) const
 
 void AMazeArtifactManager::ClearArtifacts()
 {
-    for (AArtifact* Artifact : SpawnedArtifacts)
+    // We must loop backwards through the array when we are removing items from it
+    for (int32 i = SpawnedArtifacts.Num() - 1; i >= 0; --i)
     {
+        AArtifact *Artifact = SpawnedArtifacts[i];
+
         if (IsValid(Artifact))
         {
-            Artifact->Destroy();
+            // FIX: Only destroy the artifact if it is NOT in the player's inventory!
+            if (!Artifact->bIsCarried)
+            {
+                Artifact->Destroy();
+                SpawnedArtifacts.RemoveAt(i);
+            }
+        }
+        else
+        {
+            // Clean up any empty slots just in case
+            SpawnedArtifacts.RemoveAt(i);
         }
     }
 
-    SpawnedArtifacts.Empty();
     UsedCells.Empty();
 }
 
@@ -165,7 +177,7 @@ void AMazeArtifactManager::ResetForNextLevel()
 int32 AMazeArtifactManager::GetRemainingArtifactCount() const
 {
     int32 Count = 0;
-    for (const AArtifact* Artifact : SpawnedArtifacts)
+    for (const AArtifact *Artifact : SpawnedArtifacts)
     {
         if (IsValid(Artifact) && !Artifact->bIsCarried)
             Count++;
@@ -182,19 +194,19 @@ void AMazeArtifactManager::SpawnArtifacts()
     if (!ArtifactClass || !Maze || !SphereActor)
     {
         UE_LOG(LogTemp, Warning, TEXT("[ArtifactManager] SpawnArtifacts: missing refs (ArtifactClass=%s Maze=%s SphereActor=%s)"),
-            ArtifactClass ? TEXT("OK") : TEXT("NULL"),
-            Maze          ? TEXT("OK") : TEXT("NULL"),
-            SphereActor   ? TEXT("OK") : TEXT("NULL"));
+               ArtifactClass ? TEXT("OK") : TEXT("NULL"),
+               Maze ? TEXT("OK") : TEXT("NULL"),
+               SphereActor ? TEXT("OK") : TEXT("NULL"));
         return;
     }
 
     const FMazeNode PlayerNode = PlayerPawn
-        ? SphereActor->WorldToMazeCell(PlayerPawn->GetActorLocation())
-        : FMazeNode(-1, -1, -1);
+                                     ? SphereActor->WorldToMazeCell(PlayerPawn->GetActorLocation())
+                                     : FMazeNode(-1, -1, -1);
 
     const FMazeNode AINode = AIPawn
-        ? SphereActor->WorldToMazeCell(AIPawn->GetActorLocation())
-        : FMazeNode(-1, -1, -1);
+                                 ? SphereActor->WorldToMazeCell(AIPawn->GetActorLocation())
+                                 : FMazeNode(-1, -1, -1);
 
     FActorSpawnParameters SpawnParams;
     SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
@@ -247,7 +259,7 @@ void AMazeArtifactManager::SpawnArtifacts()
         const FVector SpawnLocation = CellCenter + UpDir * 35.f;
         const FRotator SpawnRotation = FRotationMatrix::MakeFromZ(UpDir).Rotator();
 
-        AArtifact* NewArtifact = GetWorld()->SpawnActor<AArtifact>(
+        AArtifact *NewArtifact = GetWorld()->SpawnActor<AArtifact>(
             ArtifactClass,
             SpawnLocation,
             SpawnRotation,
@@ -266,13 +278,14 @@ void AMazeArtifactManager::SpawnArtifacts()
         EArtifactType TypeToAssign = EArtifactType::None;
         if (bAllowAllArtifactTypes)
         {
-            // Wave 5+: round-robin through all four powered types
-            switch (i % 4)
+            // Wave 5+: round-robin through all five powered types
+            switch (i % 5)
             {
             case 0: TypeToAssign = EArtifactType::Beam;       break;
             case 1: TypeToAssign = EArtifactType::PhaseWalk;  break;
             case 2: TypeToAssign = EArtifactType::PathFinder; break;
-            default: TypeToAssign = EArtifactType::Barrier;   break;
+            case 3: TypeToAssign = EArtifactType::Barrier;    break;
+            default: TypeToAssign = EArtifactType::AoEBomb;   break;
             }
         }
         else if (IntroducedArtifactType != EArtifactType::None && i == 0)
@@ -289,8 +302,8 @@ void AMazeArtifactManager::SpawnArtifacts()
         UsedCells.Add(SpawnCell);
 
         UE_LOG(LogTemp, Warning,
-            TEXT("Spawned Artifact  Face=%d X=%d Y=%d"),
-            SpawnCell.Face, SpawnCell.X, SpawnCell.Y);
+               TEXT("Spawned Artifact  Face=%d X=%d Y=%d"),
+               SpawnCell.Face, SpawnCell.X, SpawnCell.Y);
     }
 
     // Mark as spawned so Tick proceeds to pickup detection regardless of who called us

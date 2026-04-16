@@ -16,7 +16,6 @@ class UStaticMesh;
 class UMaterialInterface;
 class AMazeArtifactManager;
 
-
 /**
  * AOrchestrator
  * Job: Orchestrate the current pipeline:
@@ -168,10 +167,10 @@ public:
 	int32 NumArtifactsToSpawn = 1;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Orchestrator | Artifacts")
-    TSubclassOf<AMazeArtifactManager> ArtifactManagerClass;
+	TSubclassOf<AMazeArtifactManager> ArtifactManagerClass;
 
-    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Orchestrator | Artifacts")
-    AMazeArtifactManager* ArtifactManager = nullptr;
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Orchestrator | Artifacts")
+	AMazeArtifactManager *ArtifactManager = nullptr;
 
 	/** List of all artifacts currently active on the sphere. */
 	UPROPERTY()
@@ -227,8 +226,6 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Orchestrator | Walls")
 	float WallMeshBaseLength = 100.f;
 
-
-
 	/** Wall height along local Up (sphere normal). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Orchestrator | Walls")
 	float WallHeight = 20.f;
@@ -259,7 +256,7 @@ public:
 
 	/** Material applied to rebuilt walls. Used by both HISM and procedural wall paths. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Orchestrator | Walls")
-	UMaterialInterface* WallMaterial = nullptr;
+	UMaterialInterface *WallMaterial = nullptr;
 
 	/** Number of arc slices used to curve one logical wall edge around the sphere. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Orchestrator | Walls", meta = (ClampMin = "1", UIMin = "1"))
@@ -275,10 +272,9 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Orchestrator | Path")
 	UMaterialInterface *PathMaterial = nullptr;
 
-
 	/** Material applied to corner caps. If null, falls back to WallMaterial. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Orchestrator | Walls")
-	UMaterialInterface* CornerMaterial = nullptr;
+	UMaterialInterface *CornerMaterial = nullptr;
 
 	UFUNCTION(BlueprintCallable, Category = "Orchestrator|Walls")
 	bool GetWallSegmentCentersWorld(
@@ -286,8 +282,8 @@ public:
 		int32 X,
 		int32 Y,
 		EMazeDir Dir,
-		FVector& OutBaseCenter,
-		FVector& OutTopCenter) const;
+		FVector &OutBaseCenter,
+		FVector &OutTopCenter) const;
 
 	UFUNCTION(BlueprintCallable, Category = "Orchestrator|Walls")
 	bool GetWallSegmentFrameWorld(
@@ -295,11 +291,11 @@ public:
 		int32 X,
 		int32 Y,
 		EMazeDir Dir,
-		FVector& OutBaseCenter,
-		FVector& OutTopCenter,
-		FVector& OutUpDir,
-		FVector& OutRightDir,
-		FVector& OutForwardDir) const;
+		FVector &OutBaseCenter,
+		FVector &OutTopCenter,
+		FVector &OutUpDir,
+		FVector &OutRightDir,
+		FVector &OutForwardDir) const;
 
 	UFUNCTION(BlueprintCallable, Category = "Orchestrator|Walls")
 	bool GetWallSegmentTransformWorld(
@@ -307,10 +303,7 @@ public:
 		int32 X,
 		int32 Y,
 		EMazeDir Dir,
-		FTransform& OutTransform) const;
-
-
-	
+		FTransform &OutTransform) const;
 
 protected:
 	// =========================================================
