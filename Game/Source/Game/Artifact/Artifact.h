@@ -176,9 +176,20 @@ protected:
     // ABILITY: PATH FINDER
     // ==========================================
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Artifact|Ability|PathFinder")
-    float PathDuration = 10.f;
+    float PathDuration = 5.f;
 
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Artifact|Ability|PathFinder")
+    class UParticleSystem *PathFinderVFX;
+
+    // FIX: Pass in the exact mathematical cell we are standing on
     void ActivatePathFinder();
+    void CleanupPathFinder();
+
+    FTimerHandle PathCleanupTimer;
+    TArray<FVector> ActivePathPoints;
+
+    UPROPERTY()
+    TArray<class UParticleSystemComponent *> SpawnedPathEffects;
 
     // ==========================================
     // ABILITY: BARRIER
@@ -190,14 +201,21 @@ protected:
     float BarrierDuration = 8.f;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Artifact|Ability|Barrier")
-    int32 BarrierRadius = 7;
+    int32 BarrierLength = 5;
 
-    void ActivateBarrier();
+    void ActivateBarrier(const FMazeNode &StartNode, EMazeDir Direction);
+    void SpawnNextBarrierSegment();
     void DestroyBarrier();
 
     UPROPERTY()
     TArray<AActor *> BarrierWalls;
+
     FTimerHandle BarrierTimer;
+    FTimerHandle BarrierPropagationTimerHandle;
+
+    // Stores the exact mathematical edges between the cells!
+    UPROPERTY()
+    TArray<FTransform> PendingBarrierSpawns;
 
     // ==========================================
     // ABILITY: AOE BOMB

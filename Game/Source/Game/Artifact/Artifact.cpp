@@ -181,7 +181,7 @@ void AArtifact::ActivateAbilityFromNode(const FMazeNode &StartNode, EMazeDir Dir
         ActivatePathFinder();
         break;
     case EArtifactType::Barrier:
-        ActivateBarrier();
+        ActivateBarrier(StartNode, Direction);
         break;
     case EArtifactType::AoEBomb:
         ActivateAoEBomb();
@@ -362,30 +362,33 @@ void AArtifact::EndPhaseWalk()
 // ============================================================
 void AArtifact::ActivatePathFinder()
 {
-    if (!Carrier)
+    if (!Carrier || !SphereActor)
         return;
 
-    // 1. Safely grab the global Maze Navigator from the Orchestrator!
+    // --- NEW: GRAB LIVE PLAYER COORDINATES ---
+    AMyCharacterBase *PlayerChar = Cast<AMyCharacterBase>(Carrier);
+    if (!PlayerChar)
+        return;
+
     AOrchestrator *Orch = Cast<AOrchestrator>(UGameplayStatics::GetActorOfClass(GetWorld(), AOrchestrator::StaticClass()));
     if (!Orch || !Orch->Navigator)
         return;
 
-    UMazeNavigator *ActiveNavigator = Orch->Navigator;
+    // Calculate the perfect floor center using the Player's LIVE Face, X, and Y!
+    FVector TrueStartPos = SphereActor->GetCellCenterWorld(PlayerChar->Face, PlayerChar->X, PlayerChar->Y);
+    // -----------------------------------------
 
-    FVector PlayerPos = Carrier->GetActorLocation();
     AArtifact *Closest = nullptr;
     float BestDist = FLT_MAX;
 
-    // 2. Find the closest artifact that is NOT in someone's inventory
+    // Find the closest valid artifact on the map
     for (TActorIterator<AArtifact> It(GetWorld()); It; ++It)
     {
         AArtifact *Art = *It;
-
-        // Ignore this exact artifact, and ignore any artifact that has already been picked up!
         if (Art == this || Art->bIsCarried || Art->IsHidden())
             continue;
 
-        float Dist = FVector::Dist(PlayerPos, Art->GetActorLocation());
+        float Dist = FVector::Dist(TrueStartPos, Art->GetActorLocation());
         if (Dist < BestDist)
         {
             BestDist = Dist;
@@ -394,67 +397,141 @@ void AArtifact::ActivatePathFinder()
     }
 
     if (!Closest)
-    {
-        UE_LOG(LogTemp, Warning, TEXT("PathFinder: No available artifacts left to find!"));
         return;
-    }
 
-    // 3. Calculate the A* Path
-    TArray<FVector> Path;
-    if (ActiveNavigator->FindPath(PlayerPos, Closest->GetActorLocation(), Path))
+    CleanupPathFinder();
+
+    // 3. Find the path using the exact floor coordinates
+    if (Orch->Navigator->FindPath(TrueStartPos, Closest->GetActorLocation(), ActivePathPoints))
     {
-        // Draw a glowing yellow trail of breadcrumbs to the target
-        for (int32 i = 0; i < Path.Num() - 1; i++)
+        FVector SphereCenter = SphereActor->GetActorLocation();
+
+        for (const FVector &PointPos : ActivePathPoints)
         {
-            DrawDebugLine(GetWorld(), Path[i], Path[i + 1], FColor::Yellow, false, PathDuration, 0, 15.f);
-            DrawDebugSphere(GetWorld(), Path[i], 30.f, 12, FColor::Yellow, false, PathDuration);
+            FVector UpDir = (PointPos - SphereCenter).GetSafeNormal();
+            FRotator Rot = FRotationMatrix::MakeFromZ(UpDir).Rotator();
+
+            // Slightly elevate the VFX so it hovers above the ground and doesn't clip into the floor!
+            FVector ElevatedPos = PointPos + (UpDir * 20.f);
+
+            if (PathFinderVFX)
+            {
+                UParticleSystemComponent *SpawnedVFX = UGameplayStatics::SpawnEmitterAtLocation(GetWorld(), PathFinderVFX, ElevatedPos, Rot, FVector(1.0f));
+                if (SpawnedVFX)
+                {
+                    SpawnedPathEffects.Add(SpawnedVFX);
+                }
+            }
+            else
+            {
+                DrawDebugSphere(GetWorld(), ElevatedPos, 30.f, 12, FColor::Yellow, false, PathDuration);
+            }
+        }
+
+        GetWorldTimerManager().SetTimer(PathCleanupTimer, this, &AArtifact::CleanupPathFinder, PathDuration, false);
+    }
+}
+
+void AArtifact::CleanupPathFinder()
+{
+    // Instantly destroy all particles and empty the visual array
+    for (UParticleSystemComponent *VFX : SpawnedPathEffects)
+    {
+        if (IsValid(VFX))
+        {
+            VFX->DestroyComponent();
         }
     }
+    SpawnedPathEffects.Empty();
+    ActivePathPoints.Empty();
 }
 
 // ============================================================
 // Ability: Barrier
 // ============================================================
-void AArtifact::ActivateBarrier()
+void AArtifact::ActivateBarrier(const FMazeNode &StartNode, EMazeDir Direction)
 {
-    FMazeNode PlayerNode = SphereActor->WorldToMazeCell(Carrier->GetActorLocation());
+    if (!Carrier || !SphereActor || !BarrierWallClass || !Maze)
+        return;
 
-    for (int32 x = -BarrierRadius; x <= BarrierRadius; x++)
+    PendingBarrierSpawns.Empty();
+    FMazeNode CurrentNode = StartNode;
+
+    // Look ahead cell-by-cell
+    for (int32 i = 0; i < BarrierLength; i++)
     {
-        for (int32 y = -BarrierRadius; y <= BarrierRadius; y++)
-        {
-            if (FMath::Abs(x) != BarrierRadius && FMath::Abs(y) != BarrierRadius)
-                continue;
+        FMazeNode NextNode = Maze->GetNeighborCell(CurrentNode, Direction, true);
 
-            int32 Face = PlayerNode.Face;
-            int32 NX = PlayerNode.X + x;
-            int32 NY = PlayerNode.Y + y;
+        // Stop if we hit the edge of a face or invalid grid
+        if (!Maze->IsValid(NextNode.Face, NextNode.X, NextNode.Y))
+            break;
 
-            if (NX < 0 || NX >= Maze->CellsPerFace || NY < 0 || NY >= Maze->CellsPerFace)
-                continue;
+        // Get the world centers of both cells
+        FVector PosA = SphereActor->GetCellCenterWorld(CurrentNode.Face, CurrentNode.X, CurrentNode.Y);
+        FVector PosB = SphereActor->GetCellCenterWorld(NextNode.Face, NextNode.X, NextNode.Y);
 
-            FVector Pos = SphereActor->GetCellCenterWorld(Face, NX, NY);
-            AActor *Wall = GetWorld()->SpawnActor<AActor>(BarrierWallClass, Pos, FRotator::ZeroRotator);
+        // 1. Find the exact edge (seam) between the two cells
+        FVector EdgeCenter = (PosA + PosB) * 0.5f;
 
-            Wall->SetActorLocation(Pos);
-            BarrierWalls.Add(Wall);
-        }
+        // 2. Orient the wall so it blocks the path
+        FVector UpDir = (EdgeCenter - SphereActor->GetActorLocation()).GetSafeNormal(); // Keeps it flat on the planet
+        FVector ForwardDir = (PosB - PosA).GetSafeNormal();                             // The direction of travel
+
+        // The wall must stretch perpendicular (Left/Right) to the travel direction
+        FVector RightDir = FVector::CrossProduct(UpDir, ForwardDir).GetSafeNormal();
+
+        // Build a rotation where the Wall's length matches RightDir, and its top faces Up
+        FRotator WallRot = FRotationMatrix::MakeFromZX(UpDir, RightDir).Rotator();
+
+        // Save this perfect edge transform to our queue
+        PendingBarrierSpawns.Add(FTransform(WallRot, EdgeCenter, FVector(1.0f)));
+
+        CurrentNode = NextNode;
     }
 
-    FVector DebugCenter = SphereActor->GetCellCenterWorld(PlayerNode.Face, PlayerNode.X, PlayerNode.Y);
-    DrawDebugBox(GetWorld(), DebugCenter, FVector(40), FColor::Red, false, BarrierDuration, 0, 5);
+    if (PendingBarrierSpawns.Num() > 0)
+    {
+        // Propagate forward like the beam! (0.05 seconds per step)
+        GetWorldTimerManager().SetTimer(BarrierPropagationTimerHandle, this, &AArtifact::SpawnNextBarrierSegment, 0.05f, true, 0.0f);
+    }
+}
 
-    GetWorldTimerManager().SetTimer(BarrierTimer, this, &AArtifact::DestroyBarrier, BarrierDuration, false);
+void AArtifact::SpawnNextBarrierSegment()
+{
+    // If the queue is empty, the wall is finished! Start the destruction countdown.
+    if (PendingBarrierSpawns.Num() == 0)
+    {
+        GetWorldTimerManager().ClearTimer(BarrierPropagationTimerHandle);
+        GetWorldTimerManager().SetTimer(BarrierTimer, this, &AArtifact::DestroyBarrier, BarrierDuration, false);
+        return;
+    }
+
+    // Pop the first calculated edge off the queue
+    FTransform SpawnTransform = PendingBarrierSpawns[0];
+    PendingBarrierSpawns.RemoveAt(0);
+
+    // Spawn the physical wall exactly on the seam
+    AActor *Wall = GetWorld()->SpawnActor<AActor>(BarrierWallClass, SpawnTransform.GetLocation(), SpawnTransform.GetRotation().Rotator());
+    if (Wall)
+    {
+        BarrierWalls.Add(Wall);
+    }
 }
 
 void AArtifact::DestroyBarrier()
 {
+    // Loop through all the physical walls we spawned and destroy them
     for (AActor *Wall : BarrierWalls)
     {
-        if (Wall)
+        if (IsValid(Wall))
+        {
             Wall->Destroy();
+        }
     }
+
+    // Clear the arrays so it is perfectly clean for the next time you cast the spell!
     BarrierWalls.Empty();
+    PendingBarrierSpawns.Empty();
 }
 
 // ============================================================

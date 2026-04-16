@@ -141,6 +141,7 @@ public:
 	void UseArtifactSlot2();
 	void UseArtifactSlot3();
 	void UseArtifactSlot4();
+	void UseArtifactSlot5();
 
 private:
 	// Shared logic: checks cooldown, activates ability, clears slot if depleted.
@@ -171,6 +172,7 @@ protected:
 	UPROPERTY(BlueprintReadOnly, Category = "Maze")
 	TObjectPtr<UMaze> Maze = nullptr;
 
+public:
 	// =========================================================================
 	// Logical cell position  (ground truth of WHERE the player is)
 	// =========================================================================
@@ -183,6 +185,7 @@ protected:
 	UPROPERTY(BlueprintReadOnly, Category = "Maze")
 	int32 Y = 0;
 
+protected:
 	// =========================================================================
 	// Tuning — Movement
 	// =========================================================================

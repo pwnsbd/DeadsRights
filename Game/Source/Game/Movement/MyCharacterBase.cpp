@@ -155,6 +155,7 @@ void AMyCharacterBase::SetupPlayerInputComponent(UInputComponent *PlayerInputCom
 	InputComponent->BindKey(EKeys::Two, IE_Pressed, this, &AMyCharacterBase::UseArtifactSlot2);
 	InputComponent->BindKey(EKeys::Three, IE_Pressed, this, &AMyCharacterBase::UseArtifactSlot3);
 	InputComponent->BindKey(EKeys::Four, IE_Pressed, this, &AMyCharacterBase::UseArtifactSlot4);
+	InputComponent->BindKey(EKeys::Five, IE_Pressed, this, &AMyCharacterBase::UseArtifactSlot5);
 }
 
 // =============================================================================
@@ -867,10 +868,33 @@ void AMyCharacterBase::DumpAllMazeFacesAscii() const
 		DumpMazeFaceAscii(F);
 	}
 }
+
 bool AMyCharacterBase::AddArtifactToInventory(AArtifact *Artifact)
 {
-	if (!Artifact || !StorageComponent)
+	// 1. CRASH PROTECTION: If we are already carrying this exact item, ignore the duplicate overlap!
+	if (!Artifact || !StorageComponent || Artifact->bIsCarried)
 		return false;
+
+	// --- ABSORB DUPLICATE CHARGES ---
+	for (FStoredItem &ExistingItem : StorageComponent->Slots)
+	{
+		if (IsValid(ExistingItem.SourceActor) && ExistingItem.ItemCategory == static_cast<EItemCategory>(Artifact->ArtifactType))
+		{
+			// 2. DOUBLE-CHECK PROTECTION: Ensure we aren't absorbing ourselves
+			if (ExistingItem.SourceActor == Artifact)
+				continue;
+
+			AArtifact *ExistingArtifact = Cast<AArtifact>(ExistingItem.SourceActor);
+			if (ExistingArtifact)
+			{
+				ExistingArtifact->CurrentCharges += Artifact->MaxCharges;
+				UE_LOG(LogTemp, Warning, TEXT("Absorbed duplicate! %d charges added."), Artifact->MaxCharges);
+			}
+
+			Artifact->Destroy();
+			return true;
+		}
+	}
 
 	FStoredItem Item;
 	Item.ItemCategory = static_cast<EItemCategory>(Artifact->ArtifactType);
@@ -936,3 +960,4 @@ void AMyCharacterBase::UseArtifactSlot1() { ActivateArtifactInSlot(0); }
 void AMyCharacterBase::UseArtifactSlot2() { ActivateArtifactInSlot(1); }
 void AMyCharacterBase::UseArtifactSlot3() { ActivateArtifactInSlot(2); }
 void AMyCharacterBase::UseArtifactSlot4() { ActivateArtifactInSlot(3); }
+void AMyCharacterBase::UseArtifactSlot5() { ActivateArtifactInSlot(4); }
