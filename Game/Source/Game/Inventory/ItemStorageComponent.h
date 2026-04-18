@@ -58,6 +58,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Inventory")
 	int32 AddItem(const FStoredItem &Item);
 
+	// Places an item into a specific slot. Returns the slot index on success, INDEX_NONE if the slot is invalid or already occupied.
+	UFUNCTION(BlueprintCallable, Category = "Inventory")
+	int32 AddItemToSlot(const FStoredItem &Item, int32 SlotIndex);
+
 	// Uses the item in a slot (starts/checks cooldown). Returns false if empty or on cooldown.
 	UFUNCTION(BlueprintCallable, Category = "Inventory")
 	bool UseSlot(int32 SlotIndex);

@@ -29,6 +29,9 @@ struct GAME_API FStoredItem
 	FString ItemName = TEXT("Empty");
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Inventory")
+	FString Description = TEXT("");
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Inventory")
 	float CooldownDuration = 0.f;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Inventory")
