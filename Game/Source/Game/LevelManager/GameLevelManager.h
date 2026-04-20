@@ -54,6 +54,10 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Level Manager|Config")
 	TArray<FLevelConfig> LevelConfigs;
 
+	/** Scaling formula used to auto-generate configs for waves 6 and beyond. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Level Manager|Config")
+	FProceduralWaveConfig ProceduralConfig;
+
 	/** The Blueprint artifact class to spawn — set this in BP_GameLevelManager Details panel. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Level Manager|Config")
 	TSubclassOf<AArtifact> ArtifactClass;
@@ -103,9 +107,13 @@ protected:
 	UFUNCTION(BlueprintCallable, Category = "Level Manager")
 	void SetupCurrentLevel();
 
-	/** Called when an AI successfully escapes — resets inventory and restarts from Level 1. */
+	/** Called when an AI successfully escapes — stops everything and broadcasts OnGameLostDelegate. */
 	UFUNCTION(BlueprintCallable, Category = "Level Manager")
 	void OnGameLost();
+
+	/** Call this from the "Play Again" button on WBP_Lose — resets state and restarts from Level 1. */
+	UFUNCTION(BlueprintCallable, Category = "Level Manager")
+	void RestartGame();
 
 	/** Polls artifact count; fires when all artifacts are gone. */
 	UFUNCTION(BlueprintCallable, Category = "Level Manager")
@@ -118,6 +126,14 @@ protected:
 	/** Returns how many AI runners are still alive on the current level. */
 	UFUNCTION(BlueprintPure, Category = "Level Manager")
 	int32 GetRemainingRunnerCount() const;
+
+	/** Returns the current 1-based wave number (every 3 levels = 1 wave). */
+	UFUNCTION(BlueprintPure, Category = "Level Manager")
+	int32 GetCurrentWaveNumber() const;
+
+	/** Returns the 1-based level index within the current wave (1, 2, or 3). */
+	UFUNCTION(BlueprintPure, Category = "Level Manager")
+	int32 GetCurrentLevelInWave() const;
 
 	/** Blueprint-bindable so HUD/audio can react to a loss. */
 	UPROPERTY(BlueprintAssignable, Category = "Level Manager|Events")
@@ -147,6 +163,10 @@ private:
 	/** Fired one tick after BeginPlay — all actors are ready by then. */
 	void OnWorldReady();
 
+	/** Returns the FLevelConfig for LevelIndex — reads from LevelConfigs for manual levels,
+	 *  generates procedurally for any index beyond the array. */
+	FLevelConfig GetConfigForLevel(int32 LevelIndex) const;
+
 	/** Seed captured from Orchestrator at startup — used as the base for per-level offsets. */
 	int32 BaseSeed = 0;
 
@@ -156,8 +176,6 @@ private:
 	/** Repeating 0.5s timer that polls GetRemainingArtifactCount for the win condition. */
 	FTimerHandle WinCheckTimerHandle;
 
-	/** Called after loss delay — resets state and starts countdown for Level 1. */
-	void OnLostRestartCountdown();
 
 	/** Called when remaining artifact count hits 0 — handles win + progression. */
 	void OnLevelWon();

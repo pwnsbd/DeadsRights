@@ -40,6 +40,28 @@ int32 UItemStorageComponent::AddItem(const FStoredItem& Item)
 	return INDEX_NONE;
 }
 
+int32 UItemStorageComponent::AddItemToSlot(const FStoredItem& Item, int32 SlotIndex)
+{
+	if (Slots.Num() == 0 && MaxSlots > 0)
+		Slots.SetNum(MaxSlots);
+
+	if (!Slots.IsValidIndex(SlotIndex))
+		return INDEX_NONE;
+
+	if (!Slots[SlotIndex].IsEmpty())
+		return INDEX_NONE; // slot already occupied
+
+	Slots[SlotIndex]           = Item;
+	Slots[SlotIndex].WaveIndex = CurrentWaveIndex;
+
+	PickupHistory.Add(Slots[SlotIndex]);
+	OnItemAdded.Broadcast(Slots[SlotIndex], SlotIndex);
+
+	UE_LOG(LogTemp, Log, TEXT("[ItemStorage] Added '%s' to fixed slot %d (wave %d)"),
+		*Item.ItemName, SlotIndex, CurrentWaveIndex);
+	return SlotIndex;
+}
+
 bool UItemStorageComponent::UseSlot(int32 SlotIndex)
 {
 	if (!Slots.IsValidIndex(SlotIndex))
@@ -55,7 +77,9 @@ bool UItemStorageComponent::UseSlot(int32 SlotIndex)
 		return false;
 	}
 
-	const float Now = GetWorld()->GetTimeSeconds();
+	UWorld* World = GetWorld();
+	if (!World) return false;
+	const float Now = World->GetTimeSeconds();
 	if (Now < Slot.NextUsableTime)
 	{
 		const float Remaining = Slot.NextUsableTime - Now;

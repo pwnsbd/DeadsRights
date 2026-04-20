@@ -11,6 +11,9 @@
 
 #include "MyCharacterBase.generated.h"
 
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnActiveSlotChanged, int32, NewSlotIndex);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnDescriptionToggled, bool, bIsOpen);
+
 class AOrchestrator;
 class ACubeToSphere;
 class UMaze;
@@ -41,15 +44,15 @@ public:
 protected:
 	virtual void BeginPlay() override;
 	virtual void Tick(float DeltaSeconds) override;
-	virtual void SetupPlayerInputComponent(UInputComponent* PlayerInputComponent) override;
-	virtual void CalcCamera(float DeltaTime, FMinimalViewInfo& OutResult) override;
+	virtual void SetupPlayerInputComponent(UInputComponent *PlayerInputComponent) override;
+	virtual void CalcCamera(float DeltaTime, FMinimalViewInfo &OutResult) override;
 
 	// =========================================================================
 	// Public API
 	// =========================================================================
 public:
 	UFUNCTION(BlueprintCallable, Category = "Maze Setup")
-	void InitializeMazeReferences(AOrchestrator* InOrchestrator, ACubeToSphere* InSphere, UMaze* InMaze);
+	void InitializeMazeReferences(AOrchestrator *InOrchestrator, ACubeToSphere *InSphere, UMaze *InMaze);
 
 	UFUNCTION(BlueprintCallable, Category = "Maze Setup")
 	void RefreshAfterMazeRebuild();
@@ -66,6 +69,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Debug")
 	void DumpAllMazeFacesAscii() const;
 
+	// Indicates the player is currently phase-walking
+	UPROPERTY(BlueprintReadWrite, Category = "Ability")
+	bool bIsPhasing = false;
+
 	// =========================================================================
 	// Internal helpers
 	// =========================================================================
@@ -73,9 +80,9 @@ protected:
 	void CacheCharacterComponents();
 
 	// ---- Input ----
-	void HandleMoveInput(const FInputActionValue& Value);
-	void HandleMoveReleased(const FInputActionValue& Value);
-	void HandleLookInput(const FInputActionValue& Value);
+	void HandleMoveInput(const FInputActionValue &Value);
+	void HandleMoveReleased(const FInputActionValue &Value);
+	void HandleLookInput(const FInputActionValue &Value);
 
 	// ---- Core movement ----
 	// Attempt a step in the given maze direction; returns false if blocked by wall.
@@ -83,7 +90,7 @@ protected:
 
 	// Begin a smooth arc tween from old cell to new cell.
 	void StartTween(int32 OldFace, int32 OldX, int32 OldY,
-	                int32 NewFace, int32 NewX, int32 NewY);
+					int32 NewFace, int32 NewX, int32 NewY);
 
 	// Advance the tween each tick.
 	void UpdateTween(float DeltaSeconds);
@@ -98,10 +105,10 @@ protected:
 	// Given a world-space tangent direction, return the maze direction (N/E/S/W)
 	// whose 3D neighbour cell is geometrically closest to that direction.
 	// Works correctly on every face including the poles.
-	EMazeDir ResolveDir(const FVector& WorldDir) const;
+	EMazeDir ResolveDir(const FVector &WorldDir) const;
 
 	// ---- Wall check ----
-	bool IsOpen(const FMazeCell& Cell, EMazeDir Dir) const;
+	bool IsOpen(const FMazeCell &Cell, EMazeDir Dir) const;
 
 	// ---- Sphere helpers ----
 	// World-space pivot point of the sphere (Orchestrator actor location).
@@ -118,8 +125,7 @@ protected:
 	void UpdateCamera(float DeltaSeconds);
 
 	// ---- Misc ----
-	bool FindClosestCell(const FVector& WorldPos, int32& OutFace, int32& OutX, int32& OutY) const;
-
+	bool FindClosestCell(const FVector &WorldPos, int32 &OutFace, int32 &OutX, int32 &OutY) const;
 
 public:
 	// ===== ITEM STORAGE (BACKPACK) =====
@@ -127,21 +133,45 @@ public:
 	TObjectPtr<UItemStorageComponent> StorageComponent;
 
 	// Bridge: converts AArtifact data into a generic FStoredItem and hands it to StorageComponent.
-	bool AddArtifactToInventory(AArtifact* Artifact);
+	bool AddArtifactToInventory(AArtifact *Artifact);
 
 	// Freeze / unfreeze all player input (used by LevelManager during countdown).
 	UPROPERTY(BlueprintReadWrite, Category = "Input")
 	bool bInputFrozen = false;
+
+	/** 0-based index of the currently selected spell slot. Changed by mouse scroll. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Inventory")
+	int32 ActiveSlotIndex = 0;
+
+	/** True while the description panel is toggled open (Tab key). */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Inventory")
+	bool bDescriptionVisible = false;
+
+	/** Fired when scroll moves to a different slot. Bind in HUD to update highlight. */
+	UPROPERTY(BlueprintAssignable, Category = "Inventory")
+	FOnActiveSlotChanged OnActiveSlotChanged;
+
+	/** Fired when Tab toggles the description panel. Bind in HUD to show/hide. */
+	UPROPERTY(BlueprintAssignable, Category = "Inventory")
+	FOnDescriptionToggled OnDescriptionToggled;
 
 	// INPUT HELPERS
 	void UseArtifactSlot1();
 	void UseArtifactSlot2();
 	void UseArtifactSlot3();
 	void UseArtifactSlot4();
+	void UseArtifactSlot5();
 
 private:
 	// Shared logic: checks cooldown, activates ability, clears slot if depleted.
 	void ActivateArtifactInSlot(int32 SlotIndex);
+
+	// ---- Spell selection & description ----
+	void ScrollSlotUp();
+	void ScrollSlotDown();
+	void ToggleDescription();
+	void UseActiveSlot();       // right-click — fires the active spell
+	void ScrollSlot(int32 Direction); // shared implementation
 
 	// =========================================================================
 	// Components (cached from Blueprint)
@@ -168,6 +198,7 @@ protected:
 	UPROPERTY(BlueprintReadOnly, Category = "Maze")
 	TObjectPtr<UMaze> Maze = nullptr;
 
+public:
 	// =========================================================================
 	// Logical cell position  (ground truth of WHERE the player is)
 	// =========================================================================
@@ -180,6 +211,7 @@ protected:
 	UPROPERTY(BlueprintReadOnly, Category = "Maze")
 	int32 Y = 0;
 
+protected:
 	// =========================================================================
 	// Tuning — Movement
 	// =========================================================================
@@ -259,40 +291,38 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Debug")
 	bool bShowCameraDebug = false;
 
-
-	
 	// =========================================================================
 	// Private state
 	// =========================================================================
 private:
 	// ---- Arc tween ----
-	bool    bTweenActive      = false;
-	float   TweenAlpha        = 0.f;
+	bool bTweenActive = false;
+	float TweenAlpha = 0.f;
 
 	FVector TweenSphereCenter = FVector::ZeroVector;
-	FVector TweenFromNormal   = FVector::ZeroVector; // outward normal at start cell
-	FVector TweenToNormal     = FVector::ZeroVector; // outward normal at end cell
-	float   TweenRadius       = 0.f;                 // dist from sphere centre to char feet
-	FVector TweenMoveDir      = FVector::ZeroVector; // tangential direction of this step (world)
+	FVector TweenFromNormal = FVector::ZeroVector; // outward normal at start cell
+	FVector TweenToNormal = FVector::ZeroVector;   // outward normal at end cell
+	float TweenRadius = 0.f;					   // dist from sphere centre to char feet
+	FVector TweenMoveDir = FVector::ZeroVector;	   // tangential direction of this step (world)
 
 	// ---- Camera state (updated in Tick, read in CalcCamera) ----
-	FVector CamWorldPos   = FVector::ZeroVector;
-	FQuat   CamQuat       = FQuat::Identity;
-	bool    bCamInit      = false;
+	FVector CamWorldPos = FVector::ZeroVector;
+	FQuat CamQuat = FQuat::Identity;
+	bool bCamInit = false;
 
 	// Last direction the character actually stepped in (world-space, tangential).
 	// Camera uses this so it never swings when A/D rotates the character in place.
-	FVector CamFollowDir  = FVector::ZeroVector;
+	FVector CamFollowDir = FVector::ZeroVector;
 
 	// ---- Camera cardinal snap ----
 	// On movement input the camera smoothly snaps to the nearest 90° cardinal.
 	// Mouse input cancels the snap so the player regains free orbit.
-	bool    bCamSnapping     = false;
-	FVector CamSnapTarget    = FVector::ZeroVector; // world-space target direction
+	bool bCamSnapping = false;
+	FVector CamSnapTarget = FVector::ZeroVector; // world-space target direction
 
 	// ---- Input queue ----
 	// One move may be queued while a tween is in progress. It fires the moment
 	// the tween completes, making the movement feel responsive.
-	bool     bMoveQueued = false;
-	EMazeDir QueuedDir   = EMazeDir::N;
+	bool bMoveQueued = false;
+	EMazeDir QueuedDir = EMazeDir::N;
 };

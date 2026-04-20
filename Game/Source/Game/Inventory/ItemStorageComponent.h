@@ -6,9 +6,9 @@
 #include "ItemStorageComponent.generated.h"
 
 // Fired when an item is successfully added. SlotIndex is where it landed.
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnItemAdded,  const FStoredItem&, Item, int32, SlotIndex);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnItemAdded, const FStoredItem &, Item, int32, SlotIndex);
 // Fired when an item slot is used (cooldown triggered).
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnItemUsed,   const FStoredItem&, Item, int32, SlotIndex);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnItemUsed, const FStoredItem &, Item, int32, SlotIndex);
 // Fired when a pickup is rejected because all slots are full.
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnInventoryFull);
 
@@ -29,7 +29,7 @@ public:
 
 	// Maximum number of simultaneously held items.
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Inventory")
-	int32 MaxSlots = 4;
+	int32 MaxSlots = 5;
 
 	// Set by external systems (e.g. Orchestrator::TriggerNextRun) each wave.
 	// Stamped onto FStoredItem::WaveIndex at the moment of pickup.
@@ -56,7 +56,11 @@ public:
 
 	// Adds an item. Returns the slot index (>= 0) on success, INDEX_NONE if full.
 	UFUNCTION(BlueprintCallable, Category = "Inventory")
-	int32 AddItem(const FStoredItem& Item);
+	int32 AddItem(const FStoredItem &Item);
+
+	// Places an item into a specific slot. Returns the slot index on success, INDEX_NONE if the slot is invalid or already occupied.
+	UFUNCTION(BlueprintCallable, Category = "Inventory")
+	int32 AddItemToSlot(const FStoredItem &Item, int32 SlotIndex);
 
 	// Uses the item in a slot (starts/checks cooldown). Returns false if empty or on cooldown.
 	UFUNCTION(BlueprintCallable, Category = "Inventory")
@@ -97,7 +101,7 @@ public:
 	TArray<int32> GetSlotsByCategory(EItemCategory Category) const;
 
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Debug")
-	void LogState(const FString& Context) const;
+	void LogState(const FString &Context) const;
 
 protected:
 	virtual void BeginPlay() override;
