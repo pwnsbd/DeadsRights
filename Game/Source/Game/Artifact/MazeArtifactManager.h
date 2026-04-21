@@ -4,9 +4,9 @@
 #include "GameFramework/Actor.h"
 #include "../Maze/Maze.h"
 #include "../Conversion/CubeToSphere.h"
+#include "../Artifact/Artifact.h"
 #include "MazeArtifactManager.generated.h"
 
-class AArtifact;
 class UMaze;
 class ACubeToSphere;
 
@@ -16,35 +16,76 @@ class GAME_API AMazeArtifactManager : public AActor
     GENERATED_BODY()
 
 public:
-    virtual void BeginPlay() override;
+    AMazeArtifactManager();
 
-    // Configurable properties
+    virtual void BeginPlay() override;
+    virtual void Tick(float DeltaSeconds) override;
+
+    UFUNCTION(BlueprintCallable, Category="Artifacts")
+    void SpawnArtifacts();
+
+    UFUNCTION(BlueprintCallable, Category="Artifacts")
+    void ClearArtifacts();
+
+    /** Clears all artifacts and resets internal state so SpawnArtifacts() can be called again. */
+    UFUNCTION(BlueprintCallable, Category="Artifacts")
+    void ResetForNextLevel();
+
+    /** Returns how many artifact actors are still alive in the world (not yet collected or escaped). */
+    UFUNCTION(BlueprintPure, Category="Artifacts")
+    int32 GetRemainingArtifactCount() const;
+
+    /** When true, Tick will NOT auto-spawn artifacts — GameLevelManager owns spawning.
+     *  Defaults to true so placed instances never auto-spawn; LevelManager sets this
+     *  explicitly before calling SpawnArtifacts(). */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Artifacts")
+    bool bManagedExternally = true;
+
+    /** Read-only access to spawned artifacts — used by Orchestrator for AI targeting. */
+    const TArray<TObjectPtr<AArtifact>>& GetSpawnedArtifacts() const { return SpawnedArtifacts; }
+
     UPROPERTY(EditAnywhere, Category="Artifacts")
     TSubclassOf<AArtifact> ArtifactClass;
 
-    // Number of artifacts to spawn in the maze
     UPROPERTY(EditAnywhere, Category="Artifacts")
     int32 NumArtifacts = 7;
 
     UPROPERTY(EditAnywhere, Category="Artifacts")
-    UMaze* Maze;
+    UMaze* Maze = nullptr;
 
     UPROPERTY(EditAnywhere, Category="Artifacts")
-    ACubeToSphere* SphereActor;
+    ACubeToSphere* SphereActor = nullptr;
 
     UPROPERTY(EditAnywhere, Category="Artifacts")
     FMazeNode PlayerStartCell;
 
     UPROPERTY(EditAnywhere, Category="Artifacts")
-    AActor* PlayerPawn;
+    AActor* PlayerPawn = nullptr;
 
     UPROPERTY(EditAnywhere, Category="Artifacts")
-    AActor* AIPawn;
+    AActor* AIPawn = nullptr;
 
-    // Minimum distance (in cells) from the player or AI starting position to any spawned artifact
     UPROPERTY(EditAnywhere, Category="Artifacts")
     int32 SpawnSafetyRadius = 4;
 
+    /** Set by GameLevelManager before SpawnArtifacts(). The powered type placed in the first slot.
+     *  EArtifactType::None means all artifacts this level are basic (no ability).
+     *  Ignored when bAllowAllArtifactTypes is true. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Artifacts")
+    EArtifactType IntroducedArtifactType = EArtifactType::None;
+
+    /** When true, all four artifact types spawn in round-robin order (Wave 5+ behaviour). */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Artifacts")
+    bool bAllowAllArtifactTypes = false;
+
 private:
-  TArray<FMazeNode> UsedCells; // To track which cells have already been used for artifact spawning
+    void ResolveReferences();
+    bool IsCellUsed(const FMazeNode& Cell) const;
+    bool bHasSpawnedArtifacts = false;
+
+private:
+    TArray<FMazeNode> UsedCells;
+
+    UPROPERTY()
+    TArray<TObjectPtr<AArtifact>> SpawnedArtifacts;
 };

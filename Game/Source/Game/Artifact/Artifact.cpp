@@ -1,52 +1,48 @@
 #include "Artifact.h"
 #include "../Maze/Maze.h"
 #include "../Conversion/CubeToSphere.h"
-
 #include "Kismet/GameplayStatics.h"
 #include "EngineUtils.h"
 #include "GameFramework/Character.h"
 #include "Components/CapsuleComponent.h"
 #include "../AI/MazeNavigator.h"
-//#include "EnemyPawn.h"
-
 #include "Components/StaticMeshComponent.h"
 #include "Components/SphereComponent.h"
 #include "UObject/ConstructorHelpers.h"
 #include "DrawDebugHelpers.h"
+#include "../Movement/MyCharacterBase.h"
+#include "../AI/MazeRunner.h"
+#include "Particles/ParticleSystemComponent.h"
+#include "../Orchestrator.h"
 
-// Sets default values
+// ============================================================
+// Initialization
+// ============================================================
 AArtifact::AArtifact()
 {
     PrimaryActorTick.bCanEverTick = true;
 
-    // Mesh
     MeshComponent = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("MeshComponent"));
     RootComponent = MeshComponent;
 
-    // Use a basic sphere mesh from the engine content
     static ConstructorHelpers::FObjectFinder<UStaticMesh> SphereMesh(TEXT("/Engine/BasicShapes/Sphere"));
     if (SphereMesh.Succeeded())
     {
         MeshComponent->SetStaticMesh(SphereMesh.Object);
     }
 
-    // Set default material (can be overridden in editor)
     MeshComponent->SetWorldScale3D(FVector(SphereRadius / 50.f));
     MeshComponent->SetSimulatePhysics(false);
-    MeshComponent->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+    MeshComponent->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
 
-    // Pickup Trigger
     PickupTrigger = CreateDefaultSubobject<USphereComponent>(TEXT("PickupTrigger"));
-    PickupTrigger->InitSphereRadius(100.f);
-    PickupTrigger->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+    PickupTrigger->InitSphereRadius(35.f);
+    PickupTrigger->SetCollisionEnabled(ECollisionEnabled::NoCollision);
     PickupTrigger->SetCollisionResponseToAllChannels(ECR_Ignore);
-    PickupTrigger->SetCollisionResponseToChannel(ECC_Pawn, ECR_Overlap);
     PickupTrigger->SetupAttachment(RootComponent);
-
     PickupTrigger->OnComponentBeginOverlap.AddDynamic(this, &AArtifact::OnOverlapBegin);
 }
 
-// Called when the game starts or when spawned
 void AArtifact::BeginPlay()
 {
     Super::BeginPlay();
@@ -54,7 +50,9 @@ void AArtifact::BeginPlay()
     CurrentCharges = MaxCharges;
 }
 
-// Called every frame, handles idle animation when not carried
+// ============================================================
+// Core State & Logic
+// ============================================================
 void AArtifact::Tick(float DeltaTime)
 {
     Super::Tick(DeltaTime);
@@ -62,407 +60,619 @@ void AArtifact::Tick(float DeltaTime)
     if (!bIsCarried)
     {
         AccumulatedTime += DeltaTime;
-
         FRotator Rot = GetActorRotation();
         Rot.Yaw += RotationSpeed * DeltaTime;
         SetActorRotation(Rot);
 
-        FVector Loc = InitialLocation;
-        Loc.Z += FMath::Sin(AccumulatedTime * FloatSpeed) * FloatAmplitude;
+        FVector FloatDir = FVector::UpVector;
+        if (SphereActor)
+        {
+            FloatDir = (InitialLocation - SphereActor->GetActorLocation()).GetSafeNormal();
+            if (FloatDir.IsNearlyZero())
+            {
+                FloatDir = FVector::UpVector;
+            }
+        }
+
+        const FVector Loc = InitialLocation + FloatDir * (FMath::Sin(AccumulatedTime * FloatSpeed) * FloatAmplitude);
         SetActorLocation(Loc);
     }
 }
 
-// Spawns the artifact at a random cell on the sphere
 void AArtifact::SpawnAtRandomCell()
 {
     if (!Maze || !SphereActor)
         return;
 
-    int32 Face = FMath::RandRange(0, 5);
-    int32 X = FMath::RandRange(0, Maze->CellsPerFace - 1);
-    int32 Y = FMath::RandRange(0, Maze->CellsPerFace - 1);
+    const int32 Face = FMath::RandRange(0, 5);
+    const int32 X = FMath::RandRange(0, Maze->CellsPerFace - 1);
+    const int32 Y = FMath::RandRange(0, Maze->CellsPerFace - 1);
 
     CurrentCell = FMazeNode(Face, X, Y);
 
-    FVector SpawnLoc = SphereActor->GetCellCenterWorld(Face, X, Y);
-    SetActorLocation(SpawnLoc);
+    const FVector CellCenter = SphereActor->GetCellCenterWorld(Face, X, Y);
+    const FVector SphereCenter = SphereActor->GetActorLocation();
+    const FVector UpDir = (CellCenter - SphereCenter).GetSafeNormal();
 
+    const FVector SpawnLoc = CellCenter + UpDir * IdleSurfaceOffset;
+    const FRotator SpawnRot = FRotationMatrix::MakeFromZ(UpDir).Rotator();
+
+    SetActorLocation(SpawnLoc);
+    SetActorRotation(SpawnRot);
     InitialLocation = SpawnLoc;
 }
 
-// Handles pickup logic, attaching the artifact to the carrier
-void AArtifact::PickUp(AActor* NewCarrier)
+void AArtifact::PickUp(AActor *NewCarrier)
 {
-    if (!NewCarrier) return;
+    if (!NewCarrier || bIsCarried)
+        return;
+
+    if (AMyCharacterBase *Char = Cast<AMyCharacterBase>(NewCarrier))
+    {
+        if (!Char->AddArtifactToInventory(this))
+            return;
+    }
 
     bIsCarried = true;
     Carrier = NewCarrier;
 
-    MeshComponent->SetSimulatePhysics(false);
-    MeshComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+    if (MeshComponent)
+    {
+        MeshComponent->SetSimulatePhysics(false);
+        MeshComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+    }
 
     AttachToActor(NewCarrier, FAttachmentTransformRules::SnapToTargetNotIncludingScale);
 }
 
-// Handles dropping the artifact, re-enabling physics and collision
 void AArtifact::Drop(FVector DropLocation)
 {
     bIsCarried = false;
     Carrier = nullptr;
 
     DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);
-
     MeshComponent->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
     MeshComponent->SetSimulatePhysics(true);
-
     SetActorLocation(DropLocation);
     InitialLocation = DropLocation;
 }
 
-// Activates the artifact's ability based on the player's current cell and facing direction
+void AArtifact::OnOverlapBegin(UPrimitiveComponent *OverlappedComp, AActor *OtherActor, UPrimitiveComponent *OtherComp, int32 OtherBodyIndex, bool bFromSweep, const FHitResult &SweepResult)
+{
+    // Pickup is handled by AMazeArtifactManager using maze-cell alignment.
+}
+
+// ============================================================
+// Ability Routing
+// ============================================================
 void AArtifact::ActivateAbility()
 {
-    if (!Carrier || !SphereActor)
+    if (!Carrier || !SphereActor || CurrentCharges <= 0)
         return;
 
-    // Check if we have charges left before activating
-    if (CurrentCharges <= 0)
-    {
-        UE_LOG(LogTemp, Warning, TEXT("Artifact out of charges"));
-        return;
-    }
-
-    // Get the player's current cell and facing direction
     FMazeNode PlayerCell = SphereActor->WorldToMazeCell(Carrier->GetActorLocation());
     FVector Forward = Carrier->GetActorForwardVector();
     EMazeDir Dir = SphereActor->GetDirectionFromVector(Forward, PlayerCell);
 
-
-
-    /* turned off temp for compiling
-    // Activate the ability from the player's current cell and direction
-    ActivateAbilityFromNode(PlayerCell, Dir);
-
-    // Decrement AFTER successful use
-    bool bSuccess = ActivateAbilityFromNode(PlayerCell, Dir);
-    if (bSuccess)
-    {
-        CurrentCharges--;
-    }*/
-   
     ActivateAbilityFromNode(PlayerCell, Dir);
     CurrentCharges--;
 
-
-    UE_LOG(LogTemp, Log, TEXT("Charges remaining: %d"), CurrentCharges);
-
     if (CurrentCharges <= 0)
     {
-        UE_LOG(LogTemp, Log, TEXT("Artifact depleted"));
-
         ArtifactType = EArtifactType::None;
-
-        // Optional: change color to indicate empty
         MeshComponent->SetMaterial(0, nullptr);
     }
 }
 
-// More direct ability activation, used for testing and potential future AI use
-void AArtifact::ActivateAbilityFromNode(const FMazeNode& StartNode, EMazeDir Direction)
+void AArtifact::ActivateAbilityFromNode(const FMazeNode &StartNode, EMazeDir Direction)
 {
-    if (!Maze) return;
+    if (!Maze)
+        return;
 
     switch (ArtifactType)
     {
     case EArtifactType::Beam:
         FireBeam(StartNode, Direction);
         break;
-
     case EArtifactType::PhaseWalk:
         ActivatePhaseWalk();
         break;
-
     case EArtifactType::PathFinder:
         ActivatePathFinder();
         break;
-
     case EArtifactType::Barrier:
-        ActivateBarrier();
+        ActivateBarrier(StartNode, Direction);
+        break;
+    case EArtifactType::AoEBomb:
+        ActivateAoEBomb();
+        break;
+    default:
         break;
     }
 }
 
-// Core logic for firing the beam, called by ActivateAbilityFromNode
-void AArtifact::FireBeam(const FMazeNode& StartNode, EMazeDir Direction)
+// ============================================================
+// Ability: 3D Beam
+// ============================================================
+void AArtifact::ClearActiveBeam()
 {
-    TArray<FMazeNode> BeamCells = Maze->GetCellsInLine(StartNode, Direction, BeamDistance, true);
+    GetWorldTimerManager().ClearTimer(BeamPropagationTimerHandle);
+    GetWorldTimerManager().ClearTimer(BeamCleanupTimerHandle);
 
-    TArray<FVector> BeamPoints;
-
-    for (const FMazeNode& Node : BeamCells)
+    for (UParticleSystemComponent *VFX : SpawnedBeamEffects)
     {
-        BeamPoints.Add(GetWorldPositionFromNode(Node));
-    }
-
-    DrawBeamVisual(BeamPoints);
-
-    /*
-    AActor* AI =
-    UGameplayStatics::GetActorOfClass(GetWorld(), AEnemyPawn::StaticClass());
-
-    if (AI)
-    {
-        FMazeNode AINode =
-            SphereActor->WorldToMazeCell(AI->GetActorLocation());
-
-        if (BeamCells.Contains(AINode))
+        if (IsValid(VFX))
         {
-            UE_LOG(LogTemp, Warning, TEXT("AI HIT BY BEAM"));
-        }
-    }*/
-
-    AActor* AI = AIPawn;
-
-    if (AI)
-    {
-        FMazeNode AINode = SphereActor->WorldToMazeCell(AI->GetActorLocation());
-
-        if (BeamCells.Contains(AINode))
-        {
-            UE_LOG(LogTemp, Warning, TEXT("AI HIT BY BEAM"));
+            VFX->DestroyComponent();
         }
     }
+    SpawnedBeamEffects.Empty();
+    ActiveBeamPoints.Empty();
 }
 
-// Helper to convert world position to maze cell for visual effects
-FVector AArtifact::GetWorldPositionFromNode(const FMazeNode& Node) const
+void AArtifact::FireBeam(const FMazeNode &StartNode, EMazeDir Direction)
 {
-    if (!SphereActor)
-        return FVector::ZeroVector;
-
-    return SphereActor->GetCellCenterWorld(Node.Face, Node.X, Node.Y);
-}
-
-// Drawing actual beam effect (using debug lines for simplicity)
-void AArtifact::DrawBeamVisual(const TArray<FVector>& BeamPoints)
-{
-    if (BeamPoints.Num() < 2) return;
-
-    FColor DebugColor = BeamColor.ToFColor(true);
-
-    for (int32 i = 0; i < BeamPoints.Num() - 1; ++i)
-    {
-        DrawDebugLine(
-            GetWorld(),
-            BeamPoints[i],
-            BeamPoints[i + 1],
-            DebugColor,
-            false,
-            BeamDuration,
-            0,
-            BeamWidth
-        );
-    }
-}
-
-// Overlap event for pickup
-void AArtifact::OnOverlapBegin(
-    UPrimitiveComponent* OverlappedComp,
-    AActor* OtherActor,
-    UPrimitiveComponent* OtherComp,
-    int32 OtherBodyIndex,
-    bool bFromSweep,
-    const FHitResult& SweepResult)
-{
-    if (bIsCarried || !OtherActor)
+    if (!Carrier || !SphereActor)
         return;
 
-    PickUp(OtherActor);
+    ClearActiveBeam();
+
+    FVector SphereCenter = SphereActor->GetActorLocation();
+    FVector StartPos = Carrier->GetActorLocation();
+
+    FVector UpDir = (StartPos - SphereCenter).GetSafeNormal();
+    FVector PlayerForward = Carrier->GetActorForwardVector().GetSafeNormal();
+    FVector RightAxis = FVector::CrossProduct(UpDir, PlayerForward).GetSafeNormal();
+
+    float PlanetRadius = FVector::Dist(SphereCenter, StartPos);
+    float DistanceBetweenFirePillars = 150.0f;
+    float DegreesPerStep = (DistanceBetweenFirePillars / PlanetRadius) * (180.0f / PI);
+
+    CurrentBeamSpawnIndex = 0;
+    CurrentCleanupIndex = 0;
+
+    for (int32 i = 0; i < BeamDistance; i++)
+    {
+        FVector PointDir = UpDir.RotateAngleAxis(DegreesPerStep * i, RightAxis);
+        FVector PointPos = SphereCenter + (PointDir * PlanetRadius);
+        PointPos -= (PointDir * 50.0f);
+        ActiveBeamPoints.Add(PointPos);
+    }
+
+    GetWorldTimerManager().SetTimer(BeamPropagationTimerHandle, this, &AArtifact::SpawnNextBeamSegment, BeamPropagationSpeed, true, 0.0f);
 }
 
-// Phase Walk logic
+void AArtifact::SpawnNextBeamSegment()
+{
+    if (CurrentBeamSpawnIndex >= ActiveBeamPoints.Num() || !SphereActor)
+    {
+        GetWorldTimerManager().ClearTimer(BeamPropagationTimerHandle);
+        return;
+    }
+
+    FVector PointPos = ActiveBeamPoints[CurrentBeamSpawnIndex];
+    FVector SphereCenter = SphereActor->GetActorLocation();
+
+    if (BeamNodeVFX)
+    {
+        FVector UpDir = (PointPos - SphereCenter).GetSafeNormal();
+        FVector ForwardDir = FVector::ForwardVector;
+
+        if (CurrentBeamSpawnIndex < ActiveBeamPoints.Num() - 1)
+        {
+            ForwardDir = (ActiveBeamPoints[CurrentBeamSpawnIndex + 1] - PointPos).GetSafeNormal();
+        }
+        else if (CurrentBeamSpawnIndex > 0)
+        {
+            ForwardDir = (PointPos - ActiveBeamPoints[CurrentBeamSpawnIndex - 1]).GetSafeNormal();
+        }
+
+        FRotator VFXRotation = FRotationMatrix::MakeFromZX(UpDir, ForwardDir).Rotator();
+        UParticleSystemComponent *SpawnedVFX = UGameplayStatics::SpawnEmitterAtLocation(GetWorld(), BeamNodeVFX, PointPos, VFXRotation, FVector(1.0f));
+
+        if (SpawnedVFX)
+            SpawnedBeamEffects.Add(SpawnedVFX);
+    }
+
+    for (TActorIterator<AMazeRunner> It(GetWorld()); It; ++It)
+    {
+        AMazeRunner *Runner = *It;
+        if (IsValid(Runner) && FVector::Dist(Runner->GetActorLocation(), PointPos) < 150.0f)
+        {
+            Runner->Die();
+        }
+    }
+
+    if (CurrentBeamSpawnIndex == 0)
+    {
+        GetWorldTimerManager().SetTimer(BeamCleanupTimerHandle, this, &AArtifact::CleanupNextBeamSegment, BeamPropagationSpeed, true, BeamDuration);
+    }
+
+    CurrentBeamSpawnIndex++;
+}
+
+void AArtifact::CleanupNextBeamSegment()
+{
+    if (CurrentCleanupIndex >= SpawnedBeamEffects.Num())
+    {
+        GetWorldTimerManager().ClearTimer(BeamCleanupTimerHandle);
+        SpawnedBeamEffects.Empty();
+        ActiveBeamPoints.Empty();
+        return;
+    }
+
+    if (SpawnedBeamEffects[CurrentCleanupIndex])
+    {
+        SpawnedBeamEffects[CurrentCleanupIndex]->DestroyComponent();
+    }
+
+    CurrentCleanupIndex++;
+}
+
+// ============================================================
+// Ability: Phase Walk
+// ============================================================
 void AArtifact::ActivatePhaseWalk()
 {
-    if (!Carrier) return;
+    if (!Carrier)
+        return;
 
-    UCapsuleComponent* Capsule =
-        Carrier->FindComponentByClass<UCapsuleComponent>();
+    // 1. Tell the player's movement logic to ignore walls mathematically
+    if (AMyCharacterBase *Char = Cast<AMyCharacterBase>(Carrier))
+    {
+        Char->bIsPhasing = true;
+    }
 
-    if (!Capsule) return;
+    // 2. Spawn the visual ghost aura
+    if (PhaseWalkVFX)
+    {
+        ActivePhaseVFX = UGameplayStatics::SpawnEmitterAttached(
+            PhaseWalkVFX,
+            Carrier->GetRootComponent(),
+            NAME_None,
+            FVector::ZeroVector,
+            FRotator::ZeroRotator,
+            EAttachLocation::SnapToTarget);
+    }
 
-    Capsule->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-
-    DrawDebugSphere(
-        GetWorld(),
-        Carrier->GetActorLocation(),
-        120,
-        16,
-        FColor::Purple,
-        false,
-        PhaseDuration,
-        0,
-        5
-    );
-
-    GetWorldTimerManager().SetTimer(
-        PhaseTimer,
-        this,
-        &AArtifact::EndPhaseWalk,
-        PhaseDuration,
-        false
-    );
+    GetWorldTimerManager().SetTimer(PhaseTimer, this, &AArtifact::EndPhaseWalk, PhaseDuration, false);
 }
 
-// Ends the phase walk effect, re-enabling collision and ensuring the player is in a valid cell
 void AArtifact::EndPhaseWalk()
 {
-    if (!Carrier || !SphereActor) return;
+    if (!Carrier)
+        return;
 
-    UCapsuleComponent* Capsule =
-        Carrier->FindComponentByClass<UCapsuleComponent>();
+    // 1. Tell the player's movement logic to respect walls again
+    if (AMyCharacterBase *Char = Cast<AMyCharacterBase>(Carrier))
+    {
+        Char->bIsPhasing = false;
+    }
 
-    if (!Capsule) return;
-
-    Capsule->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
-
-    FMazeNode Node = SphereActor->WorldToMazeCell(Carrier->GetActorLocation());
-
-    FVector SafePos = SphereActor->GetCellCenterWorld(
-        Node.Face,
-        Node.X,
-        Node.Y
-    );
-
-    Carrier->SetActorLocation(SafePos);
+    // 2. Turn off the ghost aura
+    if (ActivePhaseVFX)
+    {
+        ActivePhaseVFX->DestroyComponent();
+        ActivePhaseVFX = nullptr;
+    }
 }
 
-// Path Finder logic, finds the nearest artifact and draws a path to it
+// ============================================================
+// Ability: Path Finder
+// ============================================================
 void AArtifact::ActivatePathFinder()
 {
-    if (!Carrier || !Navigator) return;
+    if (!Carrier || !SphereActor)
+        return;
 
-    FVector PlayerPos = Carrier->GetActorLocation();
+    // --- NEW: GRAB LIVE PLAYER COORDINATES ---
+    AMyCharacterBase *PlayerChar = Cast<AMyCharacterBase>(Carrier);
+    if (!PlayerChar)
+        return;
 
-    AArtifact* Closest = nullptr;
+    AOrchestrator *Orch = Cast<AOrchestrator>(UGameplayStatics::GetActorOfClass(GetWorld(), AOrchestrator::StaticClass()));
+    if (!Orch || !Orch->Navigator)
+        return;
+
+    // Calculate the perfect floor center using the Player's LIVE Face, X, and Y!
+    FVector TrueStartPos = SphereActor->GetCellCenterWorld(PlayerChar->Face, PlayerChar->X, PlayerChar->Y);
+    // -----------------------------------------
+
+    AArtifact *Closest = nullptr;
     float BestDist = FLT_MAX;
 
+    // Find the closest valid artifact on the map
     for (TActorIterator<AArtifact> It(GetWorld()); It; ++It)
     {
-        if (*It == this) continue;
+        AArtifact *Art = *It;
+        if (Art == this || Art->bIsCarried || Art->IsHidden())
+            continue;
 
-        float Dist = FVector::Dist(PlayerPos, It->GetActorLocation());
-
+        float Dist = FVector::Dist(TrueStartPos, Art->GetActorLocation());
         if (Dist < BestDist)
         {
             BestDist = Dist;
-            Closest = *It;
+            Closest = Art;
         }
     }
 
-    if (!Closest) return;
+    if (!Closest)
+        return;
 
-    TArray<FVector> Path;
+    CleanupPathFinder();
 
-    if (Navigator->FindPath(PlayerPos, Closest->GetActorLocation(), Path))
+    // 3. Find the path using the exact floor coordinates
+    if (Orch->Navigator->FindPath(TrueStartPos, Closest->GetActorLocation(), ActivePathPoints))
     {
-        for (int32 i = 0; i < Path.Num() - 1; i++)
+        FVector SphereCenter = SphereActor->GetActorLocation();
+
+        for (const FVector &PointPos : ActivePathPoints)
         {
-            DrawDebugLine(
-                GetWorld(),
-                Path[i],
-                Path[i+1],
-                FColor::Green,
-                false,
-                PathDuration,
-                0,
-                12.f
-            );
+            FVector UpDir = (PointPos - SphereCenter).GetSafeNormal();
+            FRotator Rot = FRotationMatrix::MakeFromZ(UpDir).Rotator();
 
-            DrawDebugSphere(
-                GetWorld(),
-                Path[i],
-                25,
-                12,
-                FColor::Green,
-                false,
-                PathDuration
-            );
-        }
-    }
-}
+            // Slightly elevate the VFX so it hovers above the ground and doesn't clip into the floor!
+            FVector ElevatedPos = PointPos + (UpDir * 20.f);
 
-// Activates a barrier around the player, creating temporary walls in adjacent cells
-void AArtifact::ActivateBarrier()
-{
-    FMazeNode PlayerNode =
-        SphereActor->WorldToMazeCell(Carrier->GetActorLocation());
-
-    for (int32 x = -BarrierRadius; x <= BarrierRadius; x++)
-    {
-        for (int32 y = -BarrierRadius; y <= BarrierRadius; y++)
-        {
-            if (FMath::Abs(x) != BarrierRadius &&
-                FMath::Abs(y) != BarrierRadius)
-                continue;
-
-            int32 Face = PlayerNode.Face;
-            int32 NX = PlayerNode.X + x;
-            int32 NY = PlayerNode.Y + y;
-
-            if (NX < 0 || NX >= Maze->CellsPerFace || NY < 0 || NY >= Maze->CellsPerFace)
+            if (PathFinderVFX)
             {
-                continue;
+                UParticleSystemComponent *SpawnedVFX = UGameplayStatics::SpawnEmitterAtLocation(GetWorld(), PathFinderVFX, ElevatedPos, Rot, FVector(1.0f));
+                if (SpawnedVFX)
+                {
+                    SpawnedPathEffects.Add(SpawnedVFX);
+                }
             }
-            
-            FVector Pos =
-                SphereActor->GetCellCenterWorld(Face, NX, NY);
-
-            AActor* Wall = GetWorld()->SpawnActor<AActor>(
-                BarrierWallClass,
-                Pos,
-                FRotator::ZeroRotator
-            );
-
-            Wall->SetActorLocation(Pos);
-            BarrierWalls.Add(Wall);
+            else
+            {
+                DrawDebugSphere(GetWorld(), ElevatedPos, 30.f, 12, FColor::Yellow, false, PathDuration);
+            }
         }
+
+        GetWorldTimerManager().SetTimer(PathCleanupTimer, this, &AArtifact::CleanupPathFinder, PathDuration, false);
     }
-
-    FVector DebugCenter = SphereActor->GetCellCenterWorld(
-        PlayerNode.Face,
-        PlayerNode.X,
-        PlayerNode.Y
-    );
-
-    DrawDebugBox(
-        GetWorld(),
-        DebugCenter,
-        FVector(40),
-        FColor::Red,
-        false,
-        BarrierDuration,
-        0,
-        5
-    );
-
-    
-    GetWorldTimerManager().SetTimer(
-        BarrierTimer,
-        this,
-        &AArtifact::DestroyBarrier,
-        BarrierDuration,
-        false
-    );
 }
 
-// Destroys all barrier walls when the effect ends
+void AArtifact::CleanupPathFinder()
+{
+    // Instantly destroy all particles and empty the visual array
+    for (UParticleSystemComponent *VFX : SpawnedPathEffects)
+    {
+        if (IsValid(VFX))
+        {
+            VFX->DestroyComponent();
+        }
+    }
+    SpawnedPathEffects.Empty();
+    ActivePathPoints.Empty();
+}
+
+// ============================================================
+// Ability: Barrier
+// ============================================================
+void AArtifact::ActivateBarrier(const FMazeNode &StartNode, EMazeDir Direction)
+{
+    if (!Carrier || !SphereActor || !BarrierWallClass || !Maze)
+        return;
+
+    PendingBarrierSpawns.Empty();
+    FMazeNode CurrentNode = StartNode;
+
+    // Look ahead cell-by-cell
+    for (int32 i = 0; i < BarrierLength; i++)
+    {
+        FMazeNode NextNode = Maze->GetNeighborCell(CurrentNode, Direction, true);
+
+        // Stop if we hit the edge of a face or invalid grid
+        if (!Maze->IsValid(NextNode.Face, NextNode.X, NextNode.Y))
+            break;
+
+        // Get the world centers of both cells
+        FVector PosA = SphereActor->GetCellCenterWorld(CurrentNode.Face, CurrentNode.X, CurrentNode.Y);
+        FVector PosB = SphereActor->GetCellCenterWorld(NextNode.Face, NextNode.X, NextNode.Y);
+
+        // 1. Find the exact edge (seam) between the two cells
+        FVector EdgeCenter = (PosA + PosB) * 0.5f;
+
+        // 2. Orient the wall so it blocks the path
+        FVector UpDir = (EdgeCenter - SphereActor->GetActorLocation()).GetSafeNormal(); // Keeps it flat on the planet
+        FVector ForwardDir = (PosB - PosA).GetSafeNormal();                             // The direction of travel
+
+        // The wall must stretch perpendicular (Left/Right) to the travel direction
+        FVector RightDir = FVector::CrossProduct(UpDir, ForwardDir).GetSafeNormal();
+
+        // Build a rotation where the Wall's length matches RightDir, and its top faces Up
+        FRotator WallRot = FRotationMatrix::MakeFromZX(UpDir, RightDir).Rotator();
+
+        // Save this perfect edge transform to our queue
+        PendingBarrierSpawns.Add(FTransform(WallRot, EdgeCenter, FVector(1.0f)));
+
+        CurrentNode = NextNode;
+    }
+
+    if (PendingBarrierSpawns.Num() > 0)
+    {
+        // Propagate forward like the beam! (0.05 seconds per step)
+        GetWorldTimerManager().SetTimer(BarrierPropagationTimerHandle, this, &AArtifact::SpawnNextBarrierSegment, 0.05f, true, 0.0f);
+    }
+}
+
+void AArtifact::SpawnNextBarrierSegment()
+{
+    // If the queue is empty, the wall is finished! Start the destruction countdown.
+    if (PendingBarrierSpawns.Num() == 0)
+    {
+        GetWorldTimerManager().ClearTimer(BarrierPropagationTimerHandle);
+        GetWorldTimerManager().SetTimer(BarrierTimer, this, &AArtifact::DestroyBarrier, BarrierDuration, false);
+        return;
+    }
+
+    // Pop the first calculated edge off the queue
+    FTransform SpawnTransform = PendingBarrierSpawns[0];
+    PendingBarrierSpawns.RemoveAt(0);
+
+    // Spawn the physical wall exactly on the seam
+    AActor *Wall = GetWorld()->SpawnActor<AActor>(BarrierWallClass, SpawnTransform.GetLocation(), SpawnTransform.GetRotation().Rotator());
+    if (Wall)
+    {
+        BarrierWalls.Add(Wall);
+    }
+}
+
 void AArtifact::DestroyBarrier()
 {
-    for (AActor* Wall : BarrierWalls)
+    // Loop through all the physical walls we spawned and destroy them
+    for (AActor *Wall : BarrierWalls)
     {
-        if (Wall) Wall->Destroy();
+        if (IsValid(Wall))
+        {
+            Wall->Destroy();
+        }
     }
 
+    // Clear the arrays so it is perfectly clean for the next time you cast the spell!
+    BarrierWalls.Empty();
+    PendingBarrierSpawns.Empty();
+}
+
+// ============================================================
+// Ability: AoE Bomb
+// ============================================================
+void AArtifact::ActivateAoEBomb()
+{
+    if (!Carrier || !SphereActor)
+        return;
+
+    // Lock in the center of the explosion
+    CurrentAoERadius = 0.f;
+    AoECenterPos = Carrier->GetActorLocation();
+
+    FVector SphereCenter = SphereActor->GetActorLocation();
+    AoEUpDir = (AoECenterPos - SphereCenter).GetSafeNormal();
+    AoEForwardAxis = Carrier->GetActorForwardVector();
+
+    // Ensure the axes are perfectly flat against the planet
+    FVector RightAxis = FVector::CrossProduct(AoEUpDir, AoEForwardAxis).GetSafeNormal();
+    AoEForwardAxis = FVector::CrossProduct(RightAxis, AoEUpDir).GetSafeNormal();
+
+    // Start the outward shockwave timer!
+    GetWorldTimerManager().SetTimer(AoEExpansionTimer, this, &AArtifact::ExpandAoE, AoEPropagationSpeed, true, 0.0f);
+}
+
+void AArtifact::ExpandAoE()
+{
+    if (!SphereActor || CurrentAoERadius > AoEMaxRadius)
+    {
+        // We reached max size! Stop expanding and schedule the cleanup.
+        GetWorldTimerManager().ClearTimer(AoEExpansionTimer);
+        GetWorldTimerManager().SetTimer(AoECleanupTimer, this, &AArtifact::CleanupAoE, 2.0f, false);
+        return;
+    }
+
+    FVector SphereCenter = SphereActor->GetActorLocation();
+
+    // Calculate how many particles we need to form a solid ring at this specific radius
+    float Circumference = 2.0f * PI * CurrentAoERadius;
+    int32 NumParticles = FMath::Max(1, FMath::RoundToInt(Circumference / 100.0f));
+
+    for (int32 i = 0; i < NumParticles; i++)
+    {
+        float Angle = (360.0f / NumParticles) * i;
+        FVector Dir = AoEForwardAxis.RotateAngleAxis(Angle, AoEUpDir);
+        FVector Pos = AoECenterPos + (Dir * CurrentAoERadius);
+
+        // Snap the ring to the sphere surface
+        FVector PosUp = (Pos - SphereCenter).GetSafeNormal();
+        Pos = SphereCenter + (PosUp * FVector::Dist(SphereCenter, AoECenterPos));
+
+        if (AoEVFX)
+        {
+            FRotator Rot = FRotationMatrix::MakeFromZ(PosUp).Rotator();
+            UParticleSystemComponent *VFX = UGameplayStatics::SpawnEmitterAtLocation(GetWorld(), AoEVFX, Pos, Rot, FVector(1.0f));
+            if (VFX)
+                SpawnedAoEEffects.Add(VFX);
+        }
+    }
+
+    // --- DAMAGE CHECK ---
+    // Kill any AI caught in the current shockwave ring
+    for (TActorIterator<AMazeRunner> It(GetWorld()); It; ++It)
+    {
+        if (IsValid(*It))
+        {
+            float Dist = FVector::Dist((*It)->GetActorLocation(), AoECenterPos);
+            // If they are within the new outer edge, and outside the old inner edge, they get hit!
+            if (Dist <= (CurrentAoERadius + 50.f) && Dist > (CurrentAoERadius - AoEExpansionStep))
+            {
+                (*It)->Die();
+            }
+        }
+    }
+
+    // Expand the radius for the next tick
+    CurrentAoERadius += AoEExpansionStep;
+}
+
+void AArtifact::CleanupAoE()
+{
+    for (UParticleSystemComponent *VFX : SpawnedAoEEffects)
+    {
+        if (IsValid(VFX))
+            VFX->DestroyComponent();
+    }
+    SpawnedAoEEffects.Empty();
+}
+
+// ============================================================
+// Editor / Debug
+// ============================================================
+void AArtifact::ApplyDebugVisuals()
+{
+    if (!MeshComponent)
+        return;
+
+    FLinearColor Color = FLinearColor::White;
+    switch (ArtifactType)
+    {
+    case EArtifactType::Beam:
+        Color = FLinearColor::Red;
+        break;
+    case EArtifactType::PhaseWalk:
+        Color = FLinearColor::Green;
+        break;
+    case EArtifactType::PathFinder:
+        Color = FLinearColor::Yellow;
+        break;
+    case EArtifactType::Barrier:
+        Color = FLinearColor::Blue;
+        break;
+    case EArtifactType::AoEBomb:
+        Color = FLinearColor(1.0f, 0.25f, 0.0f);
+        break;
+    default:
+        break;
+    }
+
+    if (UMaterialInstanceDynamic *MID = MeshComponent->CreateAndSetMaterialInstanceDynamic(0))
+    {
+        MID->SetVectorParameterValue(TEXT("BaseColor"), Color);
+        MID->SetVectorParameterValue(TEXT("Color"), Color);
+    }
+}
+
+// ============================================================
+// Cleanup
+// ============================================================
+void AArtifact::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+    Super::EndPlay(EndPlayReason);
+
+    ClearActiveBeam();
+    EndPhaseWalk();
+
+    for (AActor *Wall : BarrierWalls)
+    {
+        if (IsValid(Wall))
+            Wall->Destroy();
+    }
     BarrierWalls.Empty();
 }

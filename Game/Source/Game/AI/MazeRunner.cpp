@@ -2,7 +2,7 @@
 #include "Components/StaticMeshComponent.h"
 #include "../Conversion/CubeToSphere.h"
 #include "../Orchestrator.h"
-#include "Engine/StaticMeshActor.h"
+#include "../Artifact/Artifact.h"
 #include "GameFramework/Pawn.h"
 #include "MazeNavigator.h"
 
@@ -79,6 +79,61 @@ void AMazeRunner::SetPath(const TArray<FVector> &NewLocalPath, ACubeToSphere *In
 	bIsMoving = (PathToFollow.Num() > 0 && TargetSphere);
 }
 
+void AMazeRunner::Die()
+{
+	GetWorldTimerManager().ClearTimer(EscapeTimerHandle);
+	GetWorldTimerManager().ClearTimer(RePathTimerHandle);
+
+	// Safely drop the artifact if we are holding it
+	if (MyTarget && CurrentState == EAIState::Escaping)
+	{
+		AArtifact *DroppedArtifact = MyTarget;
+		MyTarget = nullptr;
+
+		if (DroppedArtifact && TargetSphere)
+		{
+			// 1. Detach from the AI
+			DroppedArtifact->DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);
+			DroppedArtifact->AttachToActor(TargetSphere, FAttachmentTransformRules::KeepWorldTransform);
+
+			// 2. Calculate the EXACT grid cell the AI died on
+			FMazeNode DeathNode = TargetSphere->WorldToMazeCell(GetActorLocation());
+			DroppedArtifact->CurrentCell = DeathNode;
+
+			// 3. Snap the artifact perfectly to the surface of that cell
+			FVector CellCenter = TargetSphere->GetCellCenterWorld(DeathNode.Face, DeathNode.X, DeathNode.Y);
+			FVector UpDir = (CellCenter - TargetSphere->GetActorLocation()).GetSafeNormal();
+
+			FVector DropLocation = CellCenter + (UpDir * DroppedArtifact->IdleSurfaceOffset);
+			FRotator DropRotation = FRotationMatrix::MakeFromZ(UpDir).Rotator();
+
+			DroppedArtifact->SetActorLocation(DropLocation);
+			DroppedArtifact->SetActorRotation(DropRotation);
+
+			// 4. FIX: Update InitialLocation so the bobbing animation doesn't warp it away!
+			DroppedArtifact->InitialLocation = DropLocation;
+
+			// 5. Make it visible and interactable again
+			DroppedArtifact->SetActorHiddenInGame(false);
+			DroppedArtifact->SetActorEnableCollision(true);
+			DroppedArtifact->bIsCarried = false;
+			DroppedArtifact->Carrier = nullptr;
+		}
+	}
+
+	this->Destroy();
+}
+
+void AMazeRunner::NotifyActorBeginOverlap(AActor *OtherActor)
+{
+	if (OtherActor && OtherActor->IsA(APawn::StaticClass()))
+	{
+		// Keep it perfectly clean: If the player tackles us,
+		// just run the exact same foolproof death logic!
+		Die();
+	}
+}
+
 void AMazeRunner::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
@@ -91,6 +146,14 @@ void AMazeRunner::Tick(float DeltaTime)
 	FVector CurrentWorldLoc = GetActorLocation();
 	FVector PlayerLoc = PlayerPawn->GetActorLocation();
 	float DistToPlayer = FVector::Dist(CurrentWorldLoc, PlayerLoc);
+
+	// --- NEW: Foolproof Player Collision Check ---
+	// If Unreal's physics engine fails to register the overlap, this math will catch it!
+	if (DistToPlayer < 50.0f)
+	{
+		Die();
+		return; // Stop ticking, we are dead!
+	}
 
 	// --- 1. STATE COLORS ---
 	if (CurrentState == EAIState::Escaping)
@@ -193,45 +256,19 @@ void AMazeRunner::Tick(float DeltaTime)
 	}
 }
 
-void AMazeRunner::NotifyActorBeginOverlap(AActor *OtherActor)
-{
-	if (OtherActor && OtherActor->IsA(APawn::StaticClass()))
-	{
-		GetWorldTimerManager().ClearTimer(EscapeTimerHandle);
-
-		// If we are killed while holding the artifact, drop it safely
-		if (MyTarget && CurrentState == EAIState::Escaping)
-		{
-			AStaticMeshActor *DroppedArtifact = MyTarget;
-			MyTarget = nullptr;
-
-			DroppedArtifact->DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);
-			if (TargetSphere)
-				DroppedArtifact->AttachToActor(TargetSphere, FAttachmentTransformRules::KeepWorldTransform);
-
-			DroppedArtifact->SetActorLocation(GetActorLocation());
-			DroppedArtifact->SetActorHiddenInGame(false);
-			DroppedArtifact->SetActorEnableCollision(true);
-		}
-
-		this->Destroy();
-	}
-}
-
 void AMazeRunner::FinishEscape()
 {
 	AOrchestrator *Orchestrator = Cast<AOrchestrator>(GetOwner());
 
 	if (MyTarget)
 	{
-		if (Orchestrator)
-			Orchestrator->ActiveArtifacts.Remove(MyTarget);
 		MyTarget->Destroy();
 		MyTarget = nullptr;
 
-		UE_LOG(LogTemp, Warning, TEXT("AI stole artifact!"));
-		if (GEngine)
-			GEngine->AddOnScreenDebugMessage(-1, 5.0f, FColor::Cyan, TEXT("AI stole artifact!"));
+		UE_LOG(LogTemp, Log, TEXT("[MazeRunner] AI successfully escaped with an artifact!"));
+
+		if (Orchestrator)
+			Orchestrator->OnArtifactStolen.Broadcast();
 	}
 
 	SetAIColor(FLinearColor::Green);

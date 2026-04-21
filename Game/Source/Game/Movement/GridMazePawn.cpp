@@ -16,6 +16,12 @@
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
 
+
+#include "../Artifact/Artifact.h"
+#include "Components/SphereComponent.h"
+#include "InputCoreTypes.h"
+#include "GameFramework/PlayerController.h"
+
 AGridMazePawn::AGridMazePawn()
 {
 	PrimaryActorTick.bCanEverTick = true;
@@ -145,6 +151,8 @@ void AGridMazePawn::BeginPlay()
 {
 	Super::BeginPlay();
 
+	InventoryArtifacts.SetNumZeroed(MaxArtifacts);
+
 	RefreshAfterMazeRebuild();
 
 	UE_LOG(LogTemp, Warning, TEXT("Pawn BeginPlay complete"));
@@ -262,6 +270,16 @@ void AGridMazePawn::SetupPlayerInputComponent(UInputComponent* PlayerInputCompon
 	{
 		UE_LOG(LogTemp, Error, TEXT("SetupInput PlayerInputComponent is not UEnhancedInputComponent"));
 	}
+
+	PlayerInputComponent->BindKey(EKeys::One,   IE_Pressed, this, &AGridMazePawn::UseArtifactSlot1);
+	PlayerInputComponent->BindKey(EKeys::Two,   IE_Pressed, this, &AGridMazePawn::UseArtifactSlot2);
+	PlayerInputComponent->BindKey(EKeys::Three, IE_Pressed, this, &AGridMazePawn::UseArtifactSlot3);
+	PlayerInputComponent->BindKey(EKeys::Four,  IE_Pressed, this, &AGridMazePawn::UseArtifactSlot4);
+
+	PlayerInputComponent->BindKey(EKeys::NumPadOne,   IE_Pressed, this, &AGridMazePawn::UseArtifactSlot1);
+	PlayerInputComponent->BindKey(EKeys::NumPadTwo,   IE_Pressed, this, &AGridMazePawn::UseArtifactSlot2);
+	PlayerInputComponent->BindKey(EKeys::NumPadThree, IE_Pressed, this, &AGridMazePawn::UseArtifactSlot3);
+	PlayerInputComponent->BindKey(EKeys::NumPadFour,  IE_Pressed, this, &AGridMazePawn::UseArtifactSlot4);
 
 	UE_LOG(LogTemp, Warning, TEXT("SetupInput END"));
 }
@@ -939,6 +957,14 @@ void AGridMazePawn::DumpFaceAscii(int32 FaceToDump) const
 
 void AGridMazePawn::Tick(float DeltaSeconds)
 {
+InventoryLogTimer += DeltaSeconds;
+
+if (InventoryLogTimer >= 2.0f)
+{
+	InventoryLogTimer = 0.f;
+	LogInventoryState(TEXT("Periodic"));
+}
+
 	Super::Tick(DeltaSeconds);
 
 	UpdateStepTween(DeltaSeconds);
@@ -992,4 +1018,212 @@ void AGridMazePawn::CalcCamera(float DeltaTime, FMinimalViewInfo& OutResult)
 	}
 
 	Super::CalcCamera(DeltaTime, OutResult);
+}
+
+
+int32 AGridMazePawn::FindFirstEmptyArtifactSlot() const
+{
+	for (int32 i = 0; i < InventoryArtifacts.Num(); ++i)
+	{
+		if (!IsValid(InventoryArtifacts[i]))
+		{
+			return i;
+		}
+	}
+
+	return INDEX_NONE;
+}
+
+int32 AGridMazePawn::GetArtifactCount() const
+{
+	int32 Count = 0;
+
+	for (AArtifact* Artifact : InventoryArtifacts)
+	{
+		if (IsValid(Artifact))
+		{
+			++Count;
+		}
+	}
+
+	return Count;
+}
+
+void AGridMazePawn::UpdateArtifactCarryVisuals()
+{
+	if (!GetRootComponent())
+	{
+		return;
+	}
+
+	for (int32 i = 0; i < InventoryArtifacts.Num(); ++i)
+	{
+		AArtifact* Artifact = InventoryArtifacts[i];
+		if (!IsValid(Artifact))
+		{
+			continue;
+		}
+
+		Artifact->AttachToComponent(GetRootComponent(), FAttachmentTransformRules::SnapToTargetNotIncludingScale);
+
+		const float SideOffset = (i - 1.5f) * ArtifactCarrySpacing;
+		const FVector SlotOffset = ArtifactCarryBaseOffset + FVector(0.f, SideOffset, 0.f);
+
+		Artifact->SetActorRelativeLocation(SlotOffset);
+		Artifact->SetActorRelativeRotation(FRotator::ZeroRotator);
+		Artifact->SetActorRelativeScale3D(ArtifactCarryScale);
+	}
+}
+
+bool AGridMazePawn::AddArtifactToInventory(AArtifact* Artifact)
+{
+	if (!IsValid(Artifact))
+	{
+		UE_LOG(LogTemp, Warning, TEXT("AddArtifactToInventory FAIL invalid artifact"));
+		return false;
+	}
+
+	if (InventoryArtifacts.Num() == 0)
+	{
+		InventoryArtifacts.SetNumZeroed(MaxArtifacts);
+	}
+
+	const int32 SlotIndex = FindFirstEmptyArtifactSlot();
+	if (SlotIndex == INDEX_NONE)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("Inventory full, could not pick up artifact"));
+		LogInventoryState(TEXT("Pickup Failed Full"));
+		return false;
+	}
+
+	InventoryArtifacts[SlotIndex] = Artifact;
+
+	Artifact->bIsCarried = true;
+	Artifact->Carrier = this;
+
+	if (Artifact->PickupTrigger)
+	{
+		Artifact->PickupTrigger->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	}
+
+	if (Artifact->MeshComponent)
+	{
+		Artifact->MeshComponent->SetSimulatePhysics(false);
+		Artifact->MeshComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	}
+
+	UpdateArtifactCarryVisuals();
+
+	UE_LOG(LogTemp, Warning,
+		TEXT("Picked up artifact into slot %d  Type=%d  Count=%d"),
+		SlotIndex + 1,
+		(int32)Artifact->ArtifactType,
+		GetArtifactCount());
+
+		LogInventoryState(TEXT("After Pickup"));
+
+	LogInventoryState(TEXT("After Pickup"));
+	return true;
+}
+
+bool AGridMazePawn::UseArtifactInSlot(int32 SlotIndex)
+{
+	if (!InventoryArtifacts.IsValidIndex(SlotIndex))
+	{
+		UE_LOG(LogTemp, Warning, TEXT("UseArtifactInSlot FAIL invalid slot %d"), SlotIndex);
+		LogInventoryState(TEXT("Use Failed Invalid Slot"));
+		return false;
+	}
+
+	AArtifact* Artifact = InventoryArtifacts[SlotIndex];
+	if (!IsValid(Artifact))
+	{
+		UE_LOG(LogTemp, Warning, TEXT("UseArtifactInSlot slot %d is empty"), SlotIndex + 1);
+		LogInventoryState(TEXT("Use Failed Empty Slot"));
+		return false;
+	}
+
+	UE_LOG(LogTemp, Warning,
+		TEXT("Using artifact in slot %d  Type=%d"),
+		SlotIndex + 1,
+		(int32)Artifact->ArtifactType);
+
+	LogInventoryState(TEXT("Before Use"));
+
+	Artifact->ActivateAbility();
+
+	LogInventoryState(TEXT("After Use"));
+
+	if (!IsValid(Artifact) || Artifact->CurrentCharges <= 0)
+	{
+		if (IsValid(Artifact))
+		{
+			Artifact->Destroy();
+		}
+
+		InventoryArtifacts[SlotIndex] = nullptr;
+		UpdateArtifactCarryVisuals();
+
+		UE_LOG(LogTemp, Warning, TEXT("Artifact in slot %d depleted and removed"), SlotIndex + 1);
+		LogInventoryState(TEXT("After Removal"));
+	}
+
+	LogInventoryState(TEXT("After Use"));
+	return true;
+}
+
+void AGridMazePawn::UseArtifactSlot1()
+{
+	UseArtifactInSlot(0);
+}
+
+void AGridMazePawn::UseArtifactSlot2()
+{
+	UseArtifactInSlot(1);
+}
+
+void AGridMazePawn::UseArtifactSlot3()
+{
+	UseArtifactInSlot(2);
+}
+
+void AGridMazePawn::UseArtifactSlot4()
+{
+	UseArtifactInSlot(3);
+}
+
+
+void AGridMazePawn::LogInventoryState(const TCHAR* Context) const
+{
+	FString InventoryText = FString::Printf(TEXT("[Inventory] %s | "), Context);
+
+	for (int32 i = 0; i < InventoryArtifacts.Num(); ++i)
+	{
+		const AArtifact* Artifact = InventoryArtifacts[i];
+
+		if (!IsValid(Artifact))
+		{
+			InventoryText += FString::Printf(TEXT("Slot%d=Empty "), i + 1);
+			continue;
+		}
+
+		FString TypeName = TEXT("None");
+
+		switch (Artifact->ArtifactType)
+		{
+		case EArtifactType::Beam:       TypeName = TEXT("Red/Beam"); break;
+		case EArtifactType::PhaseWalk:  TypeName = TEXT("Green/PhaseWalk"); break;
+		case EArtifactType::PathFinder: TypeName = TEXT("Yellow/PathFinder"); break;
+		case EArtifactType::Barrier:    TypeName = TEXT("Blue/Barrier"); break;
+		default: break;
+		}
+
+		InventoryText += FString::Printf(
+			TEXT("Slot%d=%s Charges=%d "),
+			i + 1,
+			*TypeName,
+			Artifact->CurrentCharges);
+	}
+
+	UE_LOG(LogTemp, Warning, TEXT("%s"), *InventoryText);
 }
