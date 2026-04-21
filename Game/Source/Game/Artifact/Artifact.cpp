@@ -50,6 +50,31 @@ void AArtifact::BeginPlay()
     CurrentCharges = MaxCharges;
 }
 
+float AArtifact::UpgradePowerLevel()
+{
+    switch (ArtifactType)
+    {
+    case EArtifactType::Beam:
+        BeamDistance = (BeamDistance < 20) ? BeamDistance + 1 : 20;
+        return ++BeamPowerLevel;
+
+    case EArtifactType::PhaseWalk:
+        PhaseDuration = (PhaseDuration < 10.f) ? PhaseDuration + 0.5f : 10.f;
+        return ++PhasePowerLevel;
+
+    case EArtifactType::PathFinder:
+        PathDuration = (PathDuration < 10.f) ? PathDuration + 0.5f : 10.f;
+        return ++PathPowerLevel;
+
+    case EArtifactType::AoEBomb:
+        AoEMaxRadius = (AoEMaxRadius < 1000.f) ? AoEMaxRadius + 50.f : 1000.f;
+        return ++AoEPowerLevel;
+
+    default:
+        return 0.f; // <-- Catch-all so the compiler doesn't complain!
+    }
+}
+
 // ============================================================
 // Core State & Logic
 // ============================================================

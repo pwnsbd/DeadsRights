@@ -35,6 +35,8 @@ public:
     virtual void Tick(float DeltaTime) override;
     virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
+    float UpgradePowerLevel();
+
     // ==========================================
     // COMPONENTS & CORE
     // ==========================================
@@ -130,7 +132,11 @@ protected:
     // ABILITY: BEAM
     // ==========================================
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Artifact|Ability|Beam")
-    int32 BeamDistance = 20;
+    int32 BeamDistance = 5;
+
+    // Beam level
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Artifact|Ability|Beam")
+    float BeamPowerLevel = 1.f;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Artifact|Ability|Beam")
     float BeamPropagationSpeed = 0.04f;
@@ -159,7 +165,11 @@ protected:
     // ABILITY: PHASE WALK
     // ==========================================
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Artifact|Ability|PhaseWalk")
-    float PhaseDuration = 6.f;
+    float PhaseDuration = 2.f;
+
+    // Phase level
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Artifact|Ability|PhaseWalk")
+    float PhasePowerLevel = 1.f;
 
     // The visual aura that wraps around the player
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Artifact|Ability|PhaseWalk")
@@ -176,7 +186,11 @@ protected:
     // ABILITY: PATH FINDER
     // ==========================================
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Artifact|Ability|PathFinder")
-    float PathDuration = 5.f;
+    float PathDuration = 2.f;
+
+    // Path finder level
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Artifact|Ability|PathFinder")
+    float PathPowerLevel = 1.f;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Artifact|Ability|PathFinder")
     class UParticleSystem *PathFinderVFX;
@@ -221,7 +235,11 @@ protected:
     // ABILITY: AOE BOMB
     // ==========================================
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Artifact|Ability|AoE")
-    float AoEMaxRadius = 600.f;
+    float AoEMaxRadius = 100.f;
+
+    // AoE level
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Artifact|Ability|AoE")
+    float AoEPowerLevel = 1.f;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Artifact|Ability|AoE")
     float AoEPropagationSpeed = 0.08f; // 0.08 is slower than the beam's 0.04!
