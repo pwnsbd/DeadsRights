@@ -5,7 +5,7 @@
 #include "../Artifact/Artifact.h"
 #include "MazeRunner.generated.h"
 
-class UStaticMeshComponent;
+class USkeletalMeshComponent;
 class ACubeToSphere;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnPathCompletedSignature);
@@ -50,7 +50,7 @@ public:
 
 protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
-	UStaticMeshComponent *MeshComp;
+	USkeletalMeshComponent *MeshComp;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement")
 	float MovementSpeed = 150.0f;

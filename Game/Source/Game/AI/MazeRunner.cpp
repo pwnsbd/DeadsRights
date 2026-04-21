@@ -1,5 +1,5 @@
 #include "MazeRunner.h"
-#include "Components/StaticMeshComponent.h"
+#include "Components/SkeletalMeshComponent.h"
 #include "../Conversion/CubeToSphere.h"
 #include "../Orchestrator.h"
 #include "../Artifact/Artifact.h"
@@ -9,7 +9,7 @@
 AMazeRunner::AMazeRunner()
 {
 	PrimaryActorTick.bCanEverTick = true;
-	MeshComp = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("MeshComp"));
+	MeshComp = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("MeshComp"));
 	SetRootComponent(MeshComp);
 
 	MeshComp->SetCollisionProfileName(TEXT("Trigger"));
