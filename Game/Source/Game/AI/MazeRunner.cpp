@@ -230,11 +230,22 @@ void AMazeRunner::Tick(float DeltaTime)
 		CurrentTargetIndex++;
 		if (!PathToFollow.IsValidIndex(CurrentTargetIndex))
 		{
+			// if (CurrentState == EAIState::Hunting && MyTarget && !MyTarget->IsHidden())
+			// {
+			// 	MyTarget->AttachToActor(this, FAttachmentTransformRules::KeepWorldTransform);
+			// 	MyTarget->SetActorHiddenInGame(true);
+			// 	MyTarget->SetActorEnableCollision(false);
+			// 	CurrentState = EAIState::Escaping;
+			// 	GetWorldTimerManager().SetTimer(EscapeTimerHandle, this, &AMazeRunner::FinishEscape, 10.0f, false);
+			// }
 			if (CurrentState == EAIState::Hunting && MyTarget && !MyTarget->IsHidden())
 			{
-				MyTarget->AttachToActor(this, FAttachmentTransformRules::KeepWorldTransform);
+				// --- THE FIX: Officially claim ownership so the grid knows it is gone! ---
+				MyTarget->PickUp(this);
+
+				// Keep this line so it turns invisible while the AI holds it
 				MyTarget->SetActorHiddenInGame(true);
-				MyTarget->SetActorEnableCollision(false);
+
 				CurrentState = EAIState::Escaping;
 				GetWorldTimerManager().SetTimer(EscapeTimerHandle, this, &AMazeRunner::FinishEscape, 10.0f, false);
 			}

@@ -73,6 +73,10 @@ public:
 	UPROPERTY(BlueprintReadWrite, Category = "Ability")
 	bool bIsPhasing = false;
 
+	// Tracks the total number of white basic upgrades collected
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Inventory|Upgrades")
+	int32 TotalBasicUpgradesCollected = 0;
+
 	// =========================================================================
 	// Internal helpers
 	// =========================================================================
@@ -160,7 +164,7 @@ public:
 	void UseArtifactSlot2();
 	void UseArtifactSlot3();
 	void UseArtifactSlot4();
-	void UseArtifactSlot5();
+	// void UseArtifactSlot5();
 
 private:
 	// Shared logic: checks cooldown, activates ability, clears slot if depleted.
@@ -170,7 +174,7 @@ private:
 	void ScrollSlotUp();
 	void ScrollSlotDown();
 	void ToggleDescription();
-	void UseActiveSlot();       // right-click — fires the active spell
+	void UseActiveSlot();			  // right-click — fires the active spell
 	void ScrollSlot(int32 Direction); // shared implementation
 
 	// =========================================================================
