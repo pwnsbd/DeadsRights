@@ -281,11 +281,19 @@ void AMazeArtifactManager::SpawnArtifacts()
             // Wave 5+: round-robin through all five powered types
             switch (i % 5)
             {
-            case 0: TypeToAssign = EArtifactType::Beam;       break;
-            case 1: TypeToAssign = EArtifactType::PhaseWalk;  break;
-            case 2: TypeToAssign = EArtifactType::PathFinder; break;
-            case 3: TypeToAssign = EArtifactType::Barrier;    break;
-            default: TypeToAssign = EArtifactType::AoEBomb;   break;
+            case 0:
+                TypeToAssign = EArtifactType::Beam;
+                break;
+            case 1:
+                TypeToAssign = EArtifactType::PhaseWalk;
+                break;
+            case 2:
+                TypeToAssign = EArtifactType::PathFinder;
+                break;
+            // case 3: TypeToAssign = EArtifactType::Barrier;    break;
+            default:
+                TypeToAssign = EArtifactType::AoEBomb;
+                break;
             }
         }
         else if (IntroducedArtifactType != EArtifactType::None && i == 0)
