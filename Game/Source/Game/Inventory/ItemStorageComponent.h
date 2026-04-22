@@ -29,7 +29,7 @@ public:
 
 	// Maximum number of simultaneously held items.
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Inventory")
-	int32 MaxSlots = 5;
+	int32 MaxSlots = 4;
 
 	// Set by external systems (e.g. Orchestrator::TriggerNextRun) each wave.
 	// Stamped onto FStoredItem::WaveIndex at the moment of pickup.

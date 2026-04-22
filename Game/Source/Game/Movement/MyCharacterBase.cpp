@@ -155,7 +155,7 @@ void AMyCharacterBase::SetupPlayerInputComponent(UInputComponent *PlayerInputCom
 	InputComponent->BindKey(EKeys::Two, IE_Pressed, this, &AMyCharacterBase::UseArtifactSlot2);
 	InputComponent->BindKey(EKeys::Three, IE_Pressed, this, &AMyCharacterBase::UseArtifactSlot3);
 	InputComponent->BindKey(EKeys::Four, IE_Pressed, this, &AMyCharacterBase::UseArtifactSlot4);
-	InputComponent->BindKey(EKeys::Five, IE_Pressed, this, &AMyCharacterBase::UseArtifactSlot5);
+	// InputComponent->BindKey(EKeys::Five, IE_Pressed, this, &AMyCharacterBase::UseArtifactSlot5);
 
 	// Spell selection & description panel
 	InputComponent->BindKey(EKeys::MouseScrollUp, IE_Pressed, this, &AMyCharacterBase::ScrollSlotUp);
@@ -1006,11 +1006,11 @@ bool AMyCharacterBase::AddArtifactToInventory(AArtifact *Artifact)
 	case EArtifactType::PathFinder:
 		TargetSlot = 2;
 		break;
-	case EArtifactType::Barrier:
-		TargetSlot = 3;
-		break;
+	// case EArtifactType::Barrier:
+	// 	TargetSlot = 3;
+	// 	break;
 	case EArtifactType::AoEBomb:
-		TargetSlot = 4;
+		TargetSlot = 3;
 		break;
 	default:
 		TargetSlot = 0;
@@ -1056,7 +1056,7 @@ void AMyCharacterBase::UseArtifactSlot1() { ActivateArtifactInSlot(0); }
 void AMyCharacterBase::UseArtifactSlot2() { ActivateArtifactInSlot(1); }
 void AMyCharacterBase::UseArtifactSlot3() { ActivateArtifactInSlot(2); }
 void AMyCharacterBase::UseArtifactSlot4() { ActivateArtifactInSlot(3); }
-void AMyCharacterBase::UseArtifactSlot5() { ActivateArtifactInSlot(4); }
+// void AMyCharacterBase::UseArtifactSlot5() { ActivateArtifactInSlot(4); }
 
 // ── Spell selection ───────────────────────────────────────────────────────────
 

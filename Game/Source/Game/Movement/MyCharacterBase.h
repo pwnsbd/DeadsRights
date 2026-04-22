@@ -164,7 +164,7 @@ public:
 	void UseArtifactSlot2();
 	void UseArtifactSlot3();
 	void UseArtifactSlot4();
-	void UseArtifactSlot5();
+	// void UseArtifactSlot5();
 
 private:
 	// Shared logic: checks cooldown, activates ability, clears slot if depleted.
