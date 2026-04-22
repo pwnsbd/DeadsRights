@@ -877,9 +877,64 @@ void AMyCharacterBase::DumpAllMazeFacesAscii() const
 
 bool AMyCharacterBase::AddArtifactToInventory(AArtifact *Artifact)
 {
-	// 1. CRASH PROTECTION: If we are already carrying this exact item, ignore the duplicate overlap!
+	// 1. CRASH PROTECTION
 	if (!Artifact || !StorageComponent || Artifact->bIsCarried)
 		return false;
+
+	// --- NEW: HANDLE WHITE UPGRADE ORBS (CONSUMABLE) ---
+	// We intercept the 'None' type immediately so it doesn't take up a slot!
+	if (Artifact->ArtifactType == EArtifactType::None)
+	{
+		TArray<int32> UpgradeableSlots;
+
+		// Step A: Scan the inventory for any spells that are NOT maxed out
+		for (int32 i = 0; i < StorageComponent->Slots.Num(); ++i)
+		{
+			FStoredItem &SlotItem = StorageComponent->Slots[i];
+
+			// Ensure the slot actually has a spell in it
+			if (!SlotItem.IsEmpty() && IsValid(SlotItem.SourceActor))
+			{
+				AArtifact *SlottedSpell = Cast<AArtifact>(SlotItem.SourceActor);
+
+				// If the spell hasn't hit its upgrade cap, add it to our lottery list!
+				// (Make sure you added CooldownUpgrades and MaxCooldownUpgrades to Artifact.h!)
+				if (SlottedSpell && SlottedSpell->CooldownUpgrades < SlottedSpell->MaxCooldownUpgrades)
+				{
+					UpgradeableSlots.Add(i);
+				}
+			}
+		}
+
+		// Step B: Pick a random valid spell and upgrade it!
+		if (UpgradeableSlots.Num() > 0)
+		{
+			int32 RandomIndex = UpgradeableSlots[FMath::RandRange(0, UpgradeableSlots.Num() - 1)];
+
+			FStoredItem &ChosenSlot = StorageComponent->Slots[RandomIndex];
+			AArtifact *ChosenSpell = Cast<AArtifact>(ChosenSlot.SourceActor);
+
+			if (ChosenSpell)
+			{
+				// We pass the current cooldown into the Artifact, and it returns the new math!
+				ChosenSlot.CooldownDuration = ChosenSpell->UpgradeCooldown(ChosenSlot.CooldownDuration);
+				// -------------------------------------------
+
+				TotalBasicUpgradesCollected++; // Track globally in your Character!
+
+				UE_LOG(LogTemp, Warning, TEXT("Lucky Upgrade! %s cooldown reduced to %.1f. Total Orbs Collected: %d"), *ChosenSlot.ItemName, ChosenSlot.CooldownDuration, TotalBasicUpgradesCollected);
+			}
+
+			// Destroy the orb from the ground and return true so the spawner knows it was picked up
+			Artifact->Destroy();
+			return true;
+		}
+
+		// Step C: If the list is empty, all spells are maxed out or the inventory is empty!
+		UE_LOG(LogTemp, Warning, TEXT("Cannot use upgrade! All owned spells are maxed out, or inventory is empty."));
+		return false; // Return false so the white orb stays on the floor
+	}
+	// ---------------------------------------------------
 
 	// --- ABSORB DUPLICATE CHARGES ---
 	for (FStoredItem &ExistingItem : StorageComponent->Slots)
@@ -903,6 +958,7 @@ bool AMyCharacterBase::AddArtifactToInventory(AArtifact *Artifact)
 		}
 	}
 
+	// --- ADD NEW SPELL TO INVENTORY ---
 	FStoredItem Item;
 	Item.ItemCategory = static_cast<EItemCategory>(Artifact->ArtifactType);
 
@@ -910,17 +966,17 @@ bool AMyCharacterBase::AddArtifactToInventory(AArtifact *Artifact)
 	{
 	case EArtifactType::Beam:
 		Item.ItemName = TEXT("Red Beam");
-		Item.CooldownDuration = 3.f;
+		Item.CooldownDuration = 15.f;
 		Item.Description = TEXT("Fires a beam in your facing direction. Any thief caught in the path is destroyed.");
 		break;
 	case EArtifactType::PhaseWalk:
 		Item.ItemName = TEXT("Green Phase Walk");
-		Item.CooldownDuration = 6.f;
+		Item.CooldownDuration = 20.f;
 		Item.Description = TEXT("Pass through walls for a short time. Use it to escape or cut corners.");
 		break;
 	case EArtifactType::PathFinder:
 		Item.ItemName = TEXT("Yellow Path Finder");
-		Item.CooldownDuration = 8.f;
+		Item.CooldownDuration = 15.f;
 		Item.Description = TEXT("Reveals the shortest path to the nearest uncollected artifact.");
 		break;
 	case EArtifactType::Barrier:
@@ -930,12 +986,8 @@ bool AMyCharacterBase::AddArtifactToInventory(AArtifact *Artifact)
 		break;
 	case EArtifactType::AoEBomb:
 		Item.ItemName = TEXT("Orange AoE Bomb");
-		Item.CooldownDuration = 4.f;
-		break;
-	default:
-		Item.ItemName = TEXT("Unknown Artifact");
-		Item.CooldownDuration = 5.f;
-		Item.Description = TEXT("");
+		Item.CooldownDuration = 30.f;
+		Item.Description = TEXT("Creates a large explosion that damages all nearby enemies.");
 		break;
 	}
 

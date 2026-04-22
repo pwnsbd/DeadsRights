@@ -73,6 +73,10 @@ public:
 	UPROPERTY(BlueprintReadWrite, Category = "Ability")
 	bool bIsPhasing = false;
 
+	// Tracks the total number of white basic upgrades collected
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Inventory|Upgrades")
+	int32 TotalBasicUpgradesCollected = 0;
+
 	// =========================================================================
 	// Internal helpers
 	// =========================================================================
@@ -170,7 +174,7 @@ private:
 	void ScrollSlotUp();
 	void ScrollSlotDown();
 	void ToggleDescription();
-	void UseActiveSlot();       // right-click — fires the active spell
+	void UseActiveSlot();			  // right-click — fires the active spell
 	void ScrollSlot(int32 Direction); // shared implementation
 
 	// =========================================================================

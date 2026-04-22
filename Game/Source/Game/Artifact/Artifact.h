@@ -36,6 +36,7 @@ public:
     virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
     float UpgradePowerLevel();
+    float UpgradeCooldown(float CurrentCooldown);
 
     // ==========================================
     // COMPONENTS & CORE
@@ -66,6 +67,12 @@ public:
 
     UPROPERTY(BlueprintReadOnly, Category = "Artifact|Ability")
     int32 CurrentCharges;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Artifact|Upgrades")
+    int32 CooldownUpgrades = 0;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Artifact|Upgrades")
+    int32 MaxCooldownUpgrades = 5; // The hard cap of upgrades per spell
 
     // ==========================================
     // MAZE INTEGRATION

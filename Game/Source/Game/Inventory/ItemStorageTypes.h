@@ -10,11 +10,12 @@ class AActor;
 UENUM(BlueprintType)
 enum class EItemCategory : uint8
 {
-	None        UMETA(DisplayName = "None"),
-	Beam        UMETA(DisplayName = "Beam"),
-	PhaseWalk   UMETA(DisplayName = "Phase Walk"),
-	PathFinder  UMETA(DisplayName = "Path Finder"),
-	Barrier     UMETA(DisplayName = "Barrier")
+	None UMETA(DisplayName = "None"),
+	Beam UMETA(DisplayName = "Beam"),
+	PhaseWalk UMETA(DisplayName = "Phase Walk"),
+	PathFinder UMETA(DisplayName = "Path Finder"),
+	Barrier UMETA(DisplayName = "Barrier"),
+	AoEBomb UMETA(DisplayName = "AoE Bomb")
 };
 
 USTRUCT(BlueprintType)
