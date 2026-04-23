@@ -427,7 +427,6 @@ void AArtifact::ActivatePathFinder()
     if (!Carrier || !SphereActor)
         return;
 
-    // --- NEW: GRAB LIVE PLAYER COORDINATES ---
     AMyCharacterBase *PlayerChar = Cast<AMyCharacterBase>(Carrier);
     if (!PlayerChar)
         return;
@@ -436,67 +435,133 @@ void AArtifact::ActivatePathFinder()
     if (!Orch || !Orch->Navigator)
         return;
 
-    // Calculate the perfect floor center using the Player's LIVE Face, X, and Y!
-    FVector TrueStartPos = SphereActor->GetCellCenterWorld(PlayerChar->Face, PlayerChar->X, PlayerChar->Y);
-    // -----------------------------------------
+    FVector TrueStartPos = PlayerChar->GetCharStandPos(PlayerChar->Face, PlayerChar->X, PlayerChar->Y);
 
     AArtifact *Closest = nullptr;
-    float BestDist = FLT_MAX;
+    int32 ShortestPathLength = INT_MAX;
 
-    // Find the closest valid artifact on the map
+    // 1. SMART TARGETING: Find the artifact that requires the fewest actual steps!
     for (TActorIterator<AArtifact> It(GetWorld()); It; ++It)
     {
         AArtifact *Art = *It;
         if (Art == this || Art->bIsCarried || Art->IsHidden())
             continue;
 
-        float Dist = FVector::Dist(TrueStartPos, Art->GetActorLocation());
-        if (Dist < BestDist)
+        TArray<FVector> TestPath;
+        if (Orch->Navigator->FindPath(TrueStartPos, Art->GetActorLocation(), TestPath))
         {
-            BestDist = Dist;
-            Closest = Art;
+            if (TestPath.Num() < ShortestPathLength)
+            {
+                ShortestPathLength = TestPath.Num();
+                Closest = Art;
+            }
         }
     }
-
-    if (!Closest)
-        return;
 
     CleanupPathFinder();
+    ActivePathPoints.Empty();
 
-    // 3. Find the path using the exact floor coordinates
-    if (Orch->Navigator->FindPath(TrueStartPos, Closest->GetActorLocation(), ActivePathPoints))
+    // 2. CHECK FOR SUCCESS OR FAILURE
+    if (Closest && Orch->Navigator->FindPath(TrueStartPos, Closest->GetActorLocation(), ActivePathPoints) && ActivePathPoints.Num() > 0)
     {
-        FVector SphereCenter = SphereActor->GetActorLocation();
+        CurrentPathSpawnIndex = 0;
+        CurrentPathCleanupIndex = 0; // <--- FIX: Reset the cleanup tracker here!
+        GetWorldTimerManager().SetTimer(PathPropagationTimerHandle, this, &AArtifact::SpawnNextPathSegment, PathPropagationSpeed, true, 0.0f);
+    }
+    else
+    {
+        // FAILURE (THE FIZZLE): Play error visuals and sound above the player's head
+        FVector HeadPos = Carrier->GetActorLocation() + (Carrier->GetActorUpVector() * 80.f);
 
-        for (const FVector &PointPos : ActivePathPoints)
+        if (PathErrorVFX)
         {
-            FVector UpDir = (PointPos - SphereCenter).GetSafeNormal();
-            FRotator Rot = FRotationMatrix::MakeFromZ(UpDir).Rotator();
-
-            // Slightly elevate the VFX so it hovers above the ground and doesn't clip into the floor!
-            FVector ElevatedPos = PointPos + (UpDir * 20.f);
-
-            if (PathFinderVFX)
-            {
-                UParticleSystemComponent *SpawnedVFX = UGameplayStatics::SpawnEmitterAtLocation(GetWorld(), PathFinderVFX, ElevatedPos, Rot, FVector(1.0f));
-                if (SpawnedVFX)
-                {
-                    SpawnedPathEffects.Add(SpawnedVFX);
-                }
-            }
-            else
-            {
-                DrawDebugSphere(GetWorld(), ElevatedPos, 30.f, 12, FColor::Yellow, false, PathDuration);
-            }
+            UGameplayStatics::SpawnEmitterAtLocation(GetWorld(), PathErrorVFX, HeadPos);
+        }
+        if (ErrorSound)
+        {
+            UGameplayStatics::PlaySoundAtLocation(GetWorld(), ErrorSound, HeadPos);
         }
 
-        GetWorldTimerManager().SetTimer(PathCleanupTimer, this, &AArtifact::CleanupPathFinder, PathDuration, false);
+        // Refund the charge so the player isn't punished for the maze blocking them!
+        CurrentCharges++;
+        UE_LOG(LogTemp, Warning, TEXT("PathFinder Failed! Target blocked. Charge refunded."));
     }
+}
+
+void AArtifact::SpawnNextPathSegment()
+{
+    if (CurrentPathSpawnIndex >= ActivePathPoints.Num() || !SphereActor)
+    {
+        GetWorldTimerManager().ClearTimer(PathPropagationTimerHandle);
+
+        // --- THE FIX: TRIGGER SEQUENTIAL CLEANUP ---
+        // Instead of calling CleanupPathFinder once, we loop CleanupNextPathSegment at the exact same speed we drew it!
+        GetWorldTimerManager().SetTimer(PathCleanupTimer, this, &AArtifact::CleanupNextPathSegment, PathPropagationSpeed, true, PathDuration);
+        // -------------------------------------------
+        return;
+    }
+
+    FVector PointPos = ActivePathPoints[CurrentPathSpawnIndex];
+    FVector SphereCenter = SphereActor->GetActorLocation();
+
+    FVector UpDir = (PointPos - SphereCenter).GetSafeNormal();
+    FRotator Rot = FRotationMatrix::MakeFromZ(UpDir).Rotator();
+    FVector ElevatedPos = PointPos + (UpDir * 10.f);
+
+    // --- GRADIENT MATH ---
+    float Alpha = (float)CurrentPathSpawnIndex / (float)ActivePathPoints.Num();
+    FLinearColor GradientColor = FMath::Lerp(FLinearColor::Green, FLinearColor::Red, Alpha);
+    // ---------------------
+
+    if (PathFinderVFX)
+    {
+        UParticleSystemComponent *SpawnedVFX = UGameplayStatics::SpawnEmitterAtLocation(GetWorld(), PathFinderVFX, ElevatedPos, Rot, FVector(1.0f));
+        if (SpawnedVFX)
+        {
+            SpawnedVFX->SetColorParameter(FName("PathColor"), GradientColor);
+            SpawnedPathEffects.Add(SpawnedVFX);
+        }
+    }
+    else
+    {
+        // --- THE FIX: SYNCHRONIZED DEBUG SPHERES ---
+        // We calculate exactly how many seconds are left until the drawing finishes.
+        float TimeRemainingToFinishDrawing = (ActivePathPoints.Num() - CurrentPathSpawnIndex) * PathPropagationSpeed;
+
+        // We add that to the static PathDuration. Now, no matter when a sphere is drawn,
+        // its countdown will expire at the exact same millisecond as the others!
+        float ExactLifetime = PathDuration + TimeRemainingToFinishDrawing;
+
+        DrawDebugSphere(GetWorld(), ElevatedPos, 30.f, 12, GradientColor.ToFColor(true), false, ExactLifetime);
+    }
+
+    CurrentPathSpawnIndex++;
+}
+
+void AArtifact::CleanupNextPathSegment()
+{
+    // If we have deleted every particle in the array...
+    if (CurrentPathCleanupIndex >= SpawnedPathEffects.Num())
+    {
+        // We are completely done! Run the final wipe just to clean up the arrays.
+        CleanupPathFinder();
+        return;
+    }
+
+    // Destroy the oldest particle in the line
+    if (SpawnedPathEffects.IsValidIndex(CurrentPathCleanupIndex) && SpawnedPathEffects[CurrentPathCleanupIndex])
+    {
+        SpawnedPathEffects[CurrentPathCleanupIndex]->DestroyComponent();
+    }
+
+    CurrentPathCleanupIndex++;
 }
 
 void AArtifact::CleanupPathFinder()
 {
-    // Instantly destroy all particles and empty the visual array
+    GetWorldTimerManager().ClearTimer(PathPropagationTimerHandle);
+    GetWorldTimerManager().ClearTimer(PathCleanupTimer);
+
     for (UParticleSystemComponent *VFX : SpawnedPathEffects)
     {
         if (IsValid(VFX))
