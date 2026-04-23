@@ -193,20 +193,36 @@ protected:
     // ABILITY: PATH FINDER
     // ==========================================
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Artifact|Ability|PathFinder")
-    float PathDuration = 2.f;
+    float PathDuration = 3.f; // How long it stays visible AFTER it finishes drawing
 
-    // Path finder level
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Artifact|Ability|PathFinder")
+    float PathPropagationSpeed = 0.05f; // How fast the snake draws itself (0.05s per step)
+
+    // --- FIX: ADD THIS BACK IN! ---
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Artifact|Ability|PathFinder")
     float PathPowerLevel = 1.f;
+    // ------------------------------
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Artifact|Ability|PathFinder")
     class UParticleSystem *PathFinderVFX;
 
-    // FIX: Pass in the exact mathematical cell we are standing on
+    // --- NEW: ERROR FEEDBACK ---
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Artifact|Ability|PathFinder")
+    class UParticleSystem *PathErrorVFX; // Red smoke puff
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Artifact|Ability|PathFinder")
+    class USoundBase *ErrorSound; // Error buzz sound
+
     void ActivatePathFinder();
+    void SpawnNextPathSegment(); // NEW: The growing logic
+    void CleanupNextPathSegment();
     void CleanupPathFinder();
 
     FTimerHandle PathCleanupTimer;
+    FTimerHandle PathPropagationTimerHandle; // NEW: Controls the drawing speed
+    int32 CurrentPathSpawnIndex = 0;
+    int32 CurrentPathCleanupIndex = 0;
+
     TArray<FVector> ActivePathPoints;
 
     UPROPERTY()

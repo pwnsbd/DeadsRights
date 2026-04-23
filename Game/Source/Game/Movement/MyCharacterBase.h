@@ -122,7 +122,7 @@ protected:
 	FVector GetCellSurfacePos(int32 InFace, int32 InX, int32 InY) const;
 
 	// World-space position where the character stands above a cell.
-	FVector GetCharStandPos(int32 InFace, int32 InX, int32 InY) const;
+	// FVector GetCharStandPos(int32 InFace, int32 InX, int32 InY) const;
 
 	// ---- Camera ----
 	// Updates CamWorldPos and CamQuat each tick (called from Tick, read by CalcCamera).
@@ -214,6 +214,8 @@ public:
 
 	UPROPERTY(BlueprintReadOnly, Category = "Maze")
 	int32 Y = 0;
+
+	FVector GetCharStandPos(int32 InFace, int32 InX, int32 InY) const;
 
 protected:
 	// =========================================================================
