@@ -104,6 +104,15 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Artifact|Test")
     FVector CarriedHatScale = FVector(0.35f, 0.35f, 0.35f);
 
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Artifact|Visual")
+    TMap<EArtifactType, UStaticMesh *> ArtifactMeshes;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Artifact|Visual")
+    FRotator MeshRotationOffset = FRotator::ZeroRotator;
+
+    UFUNCTION(BlueprintCallable, Category = "Artifact|Visual")
+    void UpdateMeshForType();
+
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Artifact|Visual")
     float RotationSpeed = 50.f;
 

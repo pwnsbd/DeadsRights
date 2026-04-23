@@ -8,6 +8,7 @@
 #include "../AI/MazeNavigator.h"
 #include "Components/StaticMeshComponent.h"
 #include "Components/SphereComponent.h"
+#include "Components/SceneComponent.h"
 #include "UObject/ConstructorHelpers.h"
 #include "DrawDebugHelpers.h"
 #include "../Movement/MyCharacterBase.h"
@@ -22,8 +23,11 @@ AArtifact::AArtifact()
 {
     PrimaryActorTick.bCanEverTick = true;
 
+    USceneComponent *Root = CreateDefaultSubobject<USceneComponent>(TEXT("Root"));
+    RootComponent = Root;
+
     MeshComponent = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("MeshComponent"));
-    RootComponent = MeshComponent;
+    MeshComponent->SetupAttachment(RootComponent);
 
     static ConstructorHelpers::FObjectFinder<UStaticMesh> SphereMesh(TEXT("/Engine/BasicShapes/Sphere"));
     if (SphereMesh.Succeeded())
@@ -31,7 +35,6 @@ AArtifact::AArtifact()
         MeshComponent->SetStaticMesh(SphereMesh.Object);
     }
 
-    MeshComponent->SetWorldScale3D(FVector(SphereRadius / 50.f));
     MeshComponent->SetSimulatePhysics(false);
     MeshComponent->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
 
@@ -48,6 +51,9 @@ void AArtifact::BeginPlay()
     Super::BeginPlay();
     InitialLocation = GetActorLocation();
     CurrentCharges = MaxCharges;
+
+    if (MeshComponent && !MeshRotationOffset.IsZero())
+        MeshComponent->SetRelativeRotation(MeshRotationOffset);
 }
 
 float AArtifact::UpgradePowerLevel()
@@ -117,9 +123,6 @@ void AArtifact::Tick(float DeltaTime)
     if (!bIsCarried)
     {
         AccumulatedTime += DeltaTime;
-        FRotator Rot = GetActorRotation();
-        Rot.Yaw += RotationSpeed * DeltaTime;
-        SetActorRotation(Rot);
 
         FVector FloatDir = FVector::UpVector;
         if (SphereActor)
@@ -752,6 +755,25 @@ void AArtifact::CleanupAoE()
 // ============================================================
 // Editor / Debug
 // ============================================================
+void AArtifact::UpdateMeshForType()
+{
+    if (!MeshComponent)
+        return;
+
+    if (UStaticMesh **Found = ArtifactMeshes.Find(ArtifactType))
+    {
+        if (*Found)
+        {
+            MeshComponent->SetStaticMesh(*Found);
+            return;
+        }
+    }
+
+    UStaticMesh *SphereMesh = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Sphere"));
+    if (SphereMesh)
+        MeshComponent->SetStaticMesh(SphereMesh);
+}
+
 void AArtifact::ApplyDebugVisuals()
 {
     if (!MeshComponent)

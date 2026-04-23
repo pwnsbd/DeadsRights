@@ -47,6 +47,11 @@ public:
     UPROPERTY(EditAnywhere, Category="Artifacts")
     TSubclassOf<AArtifact> ArtifactClass;
 
+    /** Per-type artifact Blueprints. When populated, spawning rotates through this list
+     *  instead of using ArtifactClass + EArtifactType assignment. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Artifacts")
+    TArray<TSubclassOf<AArtifact>> ArtifactClasses;
+
     UPROPERTY(EditAnywhere, Category="Artifacts")
     int32 NumArtifacts = 7;
 
