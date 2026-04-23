@@ -191,10 +191,15 @@ void AMazeArtifactManager::SpawnArtifacts()
     ClearArtifacts();
     ResolveReferences();
 
-    if (!ArtifactClass || !Maze || !SphereActor)
+    const bool bUsingClassList = ArtifactClasses.Num() > 0;
+    if (!bUsingClassList && !ArtifactClass)
     {
-        UE_LOG(LogTemp, Warning, TEXT("[ArtifactManager] SpawnArtifacts: missing refs (ArtifactClass=%s Maze=%s SphereActor=%s)"),
-               ArtifactClass ? TEXT("OK") : TEXT("NULL"),
+        UE_LOG(LogTemp, Warning, TEXT("[ArtifactManager] SpawnArtifacts: no ArtifactClass or ArtifactClasses set"));
+        return;
+    }
+    if (!Maze || !SphereActor)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[ArtifactManager] SpawnArtifacts: missing refs (Maze=%s SphereActor=%s)"),
                Maze ? TEXT("OK") : TEXT("NULL"),
                SphereActor ? TEXT("OK") : TEXT("NULL"));
         return;
@@ -259,8 +264,12 @@ void AMazeArtifactManager::SpawnArtifacts()
         const FVector SpawnLocation = CellCenter + UpDir * 35.f;
         const FRotator SpawnRotation = FRotationMatrix::MakeFromZ(UpDir).Rotator();
 
+        TSubclassOf<AArtifact> ClassToSpawn = bUsingClassList
+            ? ArtifactClasses[i % ArtifactClasses.Num()]
+            : ArtifactClass;
+
         AArtifact *NewArtifact = GetWorld()->SpawnActor<AArtifact>(
-            ArtifactClass,
+            ClassToSpawn,
             SpawnLocation,
             SpawnRotation,
             SpawnParams);
@@ -275,34 +284,26 @@ void AMazeArtifactManager::SpawnArtifacts()
         NewArtifact->AIPawn = AIPawn;
         NewArtifact->CurrentCell = SpawnCell;
 
-        EArtifactType TypeToAssign = EArtifactType::None;
-        if (bAllowAllArtifactTypes)
+        if (!bUsingClassList)
         {
-            // Wave 5+: round-robin through all five powered types
-            switch (i % 5)
+            EArtifactType TypeToAssign = EArtifactType::None;
+            if (bAllowAllArtifactTypes)
             {
-            case 0:
-                TypeToAssign = EArtifactType::Beam;
-                break;
-            case 1:
-                TypeToAssign = EArtifactType::PhaseWalk;
-                break;
-            case 2:
-                TypeToAssign = EArtifactType::PathFinder;
-                break;
-            // case 3: TypeToAssign = EArtifactType::Barrier;    break;
-            default:
-                TypeToAssign = EArtifactType::AoEBomb;
-                break;
+                switch (i % 5)
+                {
+                case 0: TypeToAssign = EArtifactType::Beam;      break;
+                case 1: TypeToAssign = EArtifactType::PhaseWalk;  break;
+                case 2: TypeToAssign = EArtifactType::PathFinder; break;
+                default: TypeToAssign = EArtifactType::AoEBomb;  break;
+                }
             }
+            else if (IntroducedArtifactType != EArtifactType::None && i == 0)
+            {
+                TypeToAssign = IntroducedArtifactType;
+            }
+            NewArtifact->ArtifactType = TypeToAssign;
+            NewArtifact->UpdateMeshForType();
         }
-        else if (IntroducedArtifactType != EArtifactType::None && i == 0)
-        {
-            // Intro level: first artifact is the newly-introduced powered type
-            TypeToAssign = IntroducedArtifactType;
-        }
-        // else: TypeToAssign stays None (basic artifact, no ability)
-        NewArtifact->ArtifactType = TypeToAssign;
 
         NewArtifact->ApplyDebugVisuals();
 
