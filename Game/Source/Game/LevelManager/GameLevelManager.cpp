@@ -10,6 +10,49 @@
 AGameLevelManager::AGameLevelManager()
 {
 	PrimaryActorTick.bCanEverTick = false;
+
+	// ── Default level configs (15 hand-crafted levels) ──────────────────────
+	// Wave 1 (L1-3): introduce Beam
+	LevelConfigs = {
+		// L1 — Beam introduced
+		{ true, 1, 1, 0, 3.f, EArtifactType::Beam,      false },
+		// L2
+		{ true, 1, 2, 0, 3.f, EArtifactType::Basic,     false },
+		// L3
+		{ true, 1, 3, 0, 3.f, EArtifactType::Basic,     false },
+
+		// Wave 2 (L4-6): introduce PhaseWalk
+		// L4 — PhaseWalk introduced
+		{ true, 2, 3, 0, 3.f, EArtifactType::PhaseWalk, false },
+		// L5
+		{ true, 2, 4, 0, 3.f, EArtifactType::Basic,     false },
+		// L6
+		{ true, 2, 5, 0, 3.f, EArtifactType::Basic,     false },
+
+		// Wave 3 (L7-9): introduce PathFinder
+		// L7 — PathFinder introduced
+		{ true, 3, 5, 0, 3.f, EArtifactType::PathFinder, false },
+		// L8
+		{ true, 3, 6, 0, 3.f, EArtifactType::Basic,      false },
+		// L9
+		{ true, 3, 7, 0, 3.f, EArtifactType::Basic,      false },
+
+		// Wave 4 (L10-12): introduce AoEBomb
+		// L10 — AoEBomb introduced
+		{ true, 4, 7, 0, 3.f, EArtifactType::AoEBomb,   false },
+		// L11
+		{ true, 4, 8, 0, 3.f, EArtifactType::Basic,     false },
+		// L12
+		{ true, 4, 9, 0, 3.f, EArtifactType::Basic,     false },
+
+		// Wave 5 (L13-15): all artifact types allowed
+		// L13
+		{ true, 5, 9, 0, 3.f, EArtifactType::Basic, true },
+		// L14
+		{ true, 6, 9, 0, 3.f, EArtifactType::Basic, true },
+		// L15
+		{ true, 7, 9, 0, 3.f, EArtifactType::Basic, true },
+	};
 }
 
 void AGameLevelManager::BeginPlay()
@@ -121,9 +164,15 @@ void AGameLevelManager::OnCountdownComplete()
 {
 	UE_LOG(LogTemp, Log, TEXT("[LevelManager] GO! Level %d"), CurrentLevelIndex + 1);
 
-	// Unfreeze player
+	// Unfreeze player and restore game input mode (cursor may have been shown on lose screen)
 	if (PlayerCharacter)
 		PlayerCharacter->bInputFrozen = false;
+
+	if (APlayerController* PC = GetWorld()->GetFirstPlayerController())
+	{
+		PC->SetInputMode(FInputModeGameOnly());
+		PC->SetShowMouseCursor(false);
+	}
 
 	OnCountdownCompleteDelegate.Broadcast();
 	SetupCurrentLevel();
@@ -200,6 +249,12 @@ int32 AGameLevelManager::GetRemainingArtifactCount() const
 	return Orchestrator->ArtifactManager->GetRemainingArtifactCount();
 }
 
+int32 AGameLevelManager::GetRemainingBasicOrbCount() const
+{
+	if (!Orchestrator || !Orchestrator->ArtifactManager) return 0;
+	return Orchestrator->ArtifactManager->GetRemainingBasicOrbCount();
+}
+
 int32 AGameLevelManager::GetRemainingRunnerCount() const
 {
 	if (!Orchestrator) return 0;
@@ -218,10 +273,16 @@ void AGameLevelManager::CheckWinCondition()
 	if (!Orchestrator || !Orchestrator->ArtifactManager) return;
 
 	const int32 RemainingArtifacts = Orchestrator->ArtifactManager->GetRemainingArtifactCount();
+	const int32 TotalArtifacts     = Orchestrator->ArtifactManager->GetSpawnedArtifacts().FilterByPredicate(
+		[](const AArtifact* A){ return IsValid(A) && A->ArtifactType != EArtifactType::Basic; }).Num();
 	Orchestrator->ActiveRunners.RemoveAll([](AMazeRunner* R) { return !IsValid(R); });
 	const int32 RemainingRunners = Orchestrator->ActiveRunners.Num();
 
-	if (RemainingArtifacts == 0 && RemainingRunners == 0)
+	// Pure Basic levels have no spell artifacts — win when runners are gone.
+	// Spell levels — win when all spell artifacts AND runners are gone.
+	const bool bArtifactsDone = (TotalArtifacts == 0) ? true : (RemainingArtifacts == 0);
+
+	if (bArtifactsDone && RemainingRunners == 0)
 	{
 		GetWorldTimerManager().ClearTimer(WinCheckTimerHandle);
 		OnLevelWon();
@@ -337,6 +398,10 @@ void AGameLevelManager::OnGameLost()
 void AGameLevelManager::RestartGame()
 {
 	UE_LOG(LogTemp, Log, TEXT("[LevelManager] Restarting from Level 1..."));
+
+	// Clear player inventory and reset upgrade tracking
+	if (PlayerCharacter)
+		PlayerCharacter->ResetForNewGame();
 
 	// Reset to the first enabled level
 	CurrentLevelIndex = 0;

@@ -27,6 +27,12 @@ class AMazeArtifactManager;
 /** Broadcast by FinishEscape when an AI successfully steals an artifact. */
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnArtifactStolenSignature);
 
+/** Broadcast the moment an AI picks up an artifact and starts its escape timer. */
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnArtifactCapturedSignature, float, EscapeDuration);
+
+/** Broadcast when an escaping AI is killed before it completes its escape. */
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnEscapeCancelledSignature);
+
 UCLASS()
 class GAME_API AOrchestrator : public AActor
 {
@@ -188,9 +194,25 @@ public:
 	UFUNCTION()
 	void OnArtifactOverlapped(AActor *OverlappedActor, AActor *OtherActor);
 
+	/** Returns how many runners are currently in the Escaping state. */
+	UFUNCTION(BlueprintPure, Category = "Orchestrator|Escape")
+	int32 GetEscapingRunnerCount() const;
+
+	/** Returns the minimum remaining escape time across all escaping runners. 0 if none are escaping. */
+	UFUNCTION(BlueprintPure, Category = "Orchestrator|Escape")
+	float GetMostUrgentEscapeTimeRemaining() const;
+
 	/** Fired when an AI successfully escapes with an artifact (10s timer). */
 	UPROPERTY(BlueprintAssignable, Category = "Orchestrator | Events")
 	FOnArtifactStolenSignature OnArtifactStolen;
+
+	/** Fired the moment an AI picks up an artifact and its escape timer starts. */
+	UPROPERTY(BlueprintAssignable, Category = "Orchestrator | Events")
+	FOnArtifactCapturedSignature OnArtifactCaptured;
+
+	/** Fired when an escaping AI is killed before completing its escape. */
+	UPROPERTY(BlueprintAssignable, Category = "Orchestrator | Events")
+	FOnEscapeCancelledSignature OnEscapeCancelled;
 
 	// ---------- Sphere / Refs ----------
 

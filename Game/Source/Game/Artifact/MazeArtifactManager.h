@@ -35,6 +35,10 @@ public:
     UFUNCTION(BlueprintPure, Category="Artifacts")
     int32 GetRemainingArtifactCount() const;
 
+    /** Returns how many Basic upgrade orbs are still on the level (not yet picked up). */
+    UFUNCTION(BlueprintPure, Category="Artifacts")
+    int32 GetRemainingBasicOrbCount() const;
+
     /** When true, Tick will NOT auto-spawn artifacts — GameLevelManager owns spawning.
      *  Defaults to true so placed instances never auto-spawn; LevelManager sets this
      *  explicitly before calling SpawnArtifacts(). */
@@ -47,10 +51,11 @@ public:
     UPROPERTY(EditAnywhere, Category="Artifacts")
     TSubclassOf<AArtifact> ArtifactClass;
 
-    /** Per-type artifact Blueprints. When populated, spawning rotates through this list
-     *  instead of using ArtifactClass + EArtifactType assignment. */
+    /** Maps each artifact type to its Blueprint class.
+     *  When an entry exists for the type being spawned, that class is used.
+     *  Falls back to ArtifactClass if the type has no entry. */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Artifacts")
-    TArray<TSubclassOf<AArtifact>> ArtifactClasses;
+    TMap<EArtifactType, TSubclassOf<AArtifact>> ArtifactClassMap;
 
     UPROPERTY(EditAnywhere, Category="Artifacts")
     int32 NumArtifacts = 7;

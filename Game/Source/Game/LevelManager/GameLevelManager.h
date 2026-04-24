@@ -123,6 +123,10 @@ protected:
 	UFUNCTION(BlueprintPure, Category = "Level Manager")
 	int32 GetRemainingArtifactCount() const;
 
+	/** Returns how many Basic upgrade orbs are still on the level. */
+	UFUNCTION(BlueprintPure, Category = "Level Manager")
+	int32 GetRemainingBasicOrbCount() const;
+
 	/** Returns how many AI runners are still alive on the current level. */
 	UFUNCTION(BlueprintPure, Category = "Level Manager")
 	int32 GetRemainingRunnerCount() const;

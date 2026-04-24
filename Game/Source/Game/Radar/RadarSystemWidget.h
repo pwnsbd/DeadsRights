@@ -82,7 +82,7 @@ public:
 	FLinearColor RightArrowColor = FLinearColor(0.1f, 0.9f, 0.2f, 1.f);
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Radar|Colors")
-	FLinearColor EnemyNormalColor = FLinearColor(0.9f, 0.25f, 0.1f, 1.f);
+	FLinearColor EnemyNormalColor = FLinearColor(1.f, 0.95f, 0.1f, 1.f);
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Radar|Colors")
 	FLinearColor EnemyEscapingColor = FLinearColor(1.f, 0.05f, 0.0f, 1.f);

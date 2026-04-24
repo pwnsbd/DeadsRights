@@ -45,6 +45,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "AI|Health")
 	void Die();
 
+	/** Seconds remaining on the escape timer. Returns 0 if not currently escaping. */
+	UFUNCTION(BlueprintPure, Category = "AI|Escape")
+	float GetEscapeTimeRemaining() const;
+
 	void FinishEscape();
 	virtual void NotifyActorBeginOverlap(AActor *OtherActor) override;
 
