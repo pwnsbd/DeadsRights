@@ -79,6 +79,12 @@ void AMazeRunner::SetPath(const TArray<FVector> &NewLocalPath, ACubeToSphere *In
 	bIsMoving = (PathToFollow.Num() > 0 && TargetSphere);
 }
 
+float AMazeRunner::GetEscapeTimeRemaining() const
+{
+	if (CurrentState != EAIState::Escaping) return 0.f;
+	return FMath::Max(0.f, GetWorldTimerManager().GetTimerRemaining(EscapeTimerHandle));
+}
+
 void AMazeRunner::Die()
 {
 	GetWorldTimerManager().ClearTimer(EscapeTimerHandle);
@@ -119,6 +125,10 @@ void AMazeRunner::Die()
 			DroppedArtifact->bIsCarried = false;
 			DroppedArtifact->Carrier = nullptr;
 		}
+
+		// Notify UI to clear the escape countdown
+		if (AOrchestrator *Orch = Cast<AOrchestrator>(GetOwner()))
+			Orch->OnEscapeCancelled.Broadcast();
 	}
 
 	this->Destroy();
@@ -248,6 +258,9 @@ void AMazeRunner::Tick(float DeltaTime)
 
 				CurrentState = EAIState::Escaping;
 				GetWorldTimerManager().SetTimer(EscapeTimerHandle, this, &AMazeRunner::FinishEscape, 10.0f, false);
+
+				if (AOrchestrator *Orch = Cast<AOrchestrator>(GetOwner()))
+					Orch->OnArtifactCaptured.Broadcast(10.f);
 			}
 			bIsMoving = false;
 			return;

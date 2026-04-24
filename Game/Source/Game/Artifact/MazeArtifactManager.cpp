@@ -87,10 +87,6 @@ void AMazeArtifactManager::Tick(float DeltaSeconds)
 
         if (Artifact->CurrentCell == PlayerNode)
         {
-            UE_LOG(LogTemp, Warning,
-                   TEXT("Artifact pickup by cell match  Face=%d X=%d Y=%d"),
-                   PlayerNode.Face, PlayerNode.X, PlayerNode.Y);
-
             Artifact->PickUp(PlayerPawn);
             break;
         }
@@ -179,7 +175,18 @@ int32 AMazeArtifactManager::GetRemainingArtifactCount() const
     int32 Count = 0;
     for (const AArtifact *Artifact : SpawnedArtifacts)
     {
-        if (IsValid(Artifact) && !Artifact->bIsCarried)
+        if (IsValid(Artifact) && !Artifact->bIsCarried && Artifact->ArtifactType != EArtifactType::Basic)
+            Count++;
+    }
+    return Count;
+}
+
+int32 AMazeArtifactManager::GetRemainingBasicOrbCount() const
+{
+    int32 Count = 0;
+    for (const AArtifact *Artifact : SpawnedArtifacts)
+    {
+        if (IsValid(Artifact) && !Artifact->bIsCarried && Artifact->ArtifactType == EArtifactType::Basic)
             Count++;
     }
     return Count;
@@ -191,10 +198,9 @@ void AMazeArtifactManager::SpawnArtifacts()
     ClearArtifacts();
     ResolveReferences();
 
-    const bool bUsingClassList = ArtifactClasses.Num() > 0;
-    if (!bUsingClassList && !ArtifactClass)
+    if (ArtifactClassMap.Num() == 0 && !ArtifactClass)
     {
-        UE_LOG(LogTemp, Warning, TEXT("[ArtifactManager] SpawnArtifacts: no ArtifactClass or ArtifactClasses set"));
+        UE_LOG(LogTemp, Warning, TEXT("[ArtifactManager] SpawnArtifacts: no ArtifactClass or ArtifactClassMap set"));
         return;
     }
     if (!Maze || !SphereActor)
@@ -264,9 +270,45 @@ void AMazeArtifactManager::SpawnArtifacts()
         const FVector SpawnLocation = CellCenter + UpDir * 35.f;
         const FRotator SpawnRotation = FRotationMatrix::MakeFromZ(UpDir).Rotator();
 
-        TSubclassOf<AArtifact> ClassToSpawn = bUsingClassList
-            ? ArtifactClasses[i % ArtifactClasses.Num()]
-            : ArtifactClass;
+        // Determine type first using level config logic
+        EArtifactType TypeToAssign = EArtifactType::None;
+        if (bAllowAllArtifactTypes)
+        {
+            EArtifactType RoundRobinType;
+            switch (i % 5)
+            {
+            case 0: RoundRobinType = EArtifactType::Beam;       break;
+            case 1: RoundRobinType = EArtifactType::PhaseWalk;  break;
+            case 2: RoundRobinType = EArtifactType::PathFinder; break;
+            case 3: RoundRobinType = EArtifactType::AoEBomb;    break;
+            default: RoundRobinType = EArtifactType::Basic;     break;
+            }
+            // 50/50 chance to swap a powered slot for a Basic upgrade orb
+            TypeToAssign = (RoundRobinType != EArtifactType::Basic && FMath::RandBool())
+                ? EArtifactType::Basic
+                : RoundRobinType;
+        }
+        else if (IntroducedArtifactType == EArtifactType::Basic)
+        {
+            TypeToAssign = EArtifactType::Basic;
+        }
+        else if (IntroducedArtifactType != EArtifactType::None)
+        {
+            // i == 0 gets the introduced spell; remaining slots are Basic upgrade orbs
+            TypeToAssign = (i == 0) ? IntroducedArtifactType : EArtifactType::Basic;
+        }
+
+        // Pick BP class: map lookup → fallback to ArtifactClass
+        TSubclassOf<AArtifact> ClassToSpawn = ArtifactClass;
+        const bool bFromMap = ArtifactClassMap.Contains(TypeToAssign) && ArtifactClassMap[TypeToAssign];
+        if (bFromMap)
+            ClassToSpawn = ArtifactClassMap[TypeToAssign];
+
+        if (!ClassToSpawn)
+        {
+            UE_LOG(LogTemp, Warning, TEXT("[ArtifactManager] No class for type %d and no fallback ArtifactClass"), (int32)TypeToAssign);
+            continue;
+        }
 
         AArtifact *NewArtifact = GetWorld()->SpawnActor<AArtifact>(
             ClassToSpawn,
@@ -283,27 +325,11 @@ void AMazeArtifactManager::SpawnArtifacts()
         NewArtifact->SphereActor = SphereActor;
         NewArtifact->AIPawn = AIPawn;
         NewArtifact->CurrentCell = SpawnCell;
-
-        if (!bUsingClassList)
-        {
-            EArtifactType TypeToAssign = EArtifactType::None;
-            if (bAllowAllArtifactTypes)
-            {
-                switch (i % 5)
-                {
-                case 0: TypeToAssign = EArtifactType::Beam;      break;
-                case 1: TypeToAssign = EArtifactType::PhaseWalk;  break;
-                case 2: TypeToAssign = EArtifactType::PathFinder; break;
-                default: TypeToAssign = EArtifactType::AoEBomb;  break;
-                }
-            }
-            else if (IntroducedArtifactType != EArtifactType::None && i == 0)
-            {
-                TypeToAssign = IntroducedArtifactType;
-            }
-            NewArtifact->ArtifactType = TypeToAssign;
+        NewArtifact->ArtifactType = TypeToAssign;
+        // Only call UpdateMeshForType when using the generic fallback class —
+        // typed BP classes already have their mesh set in their Blueprint defaults.
+        if (!bFromMap)
             NewArtifact->UpdateMeshForType();
-        }
 
         NewArtifact->ApplyDebugVisuals();
 

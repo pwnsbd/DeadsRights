@@ -103,6 +103,14 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Debug")
 	void LogState(const FString &Context) const;
 
+	// Seconds remaining on the cooldown for a slot. Returns 0 if ready or slot is empty.
+	UFUNCTION(BlueprintPure, Category = "Inventory")
+	float GetCooldownRemaining(int32 SlotIndex) const;
+
+	// 1.0 = just cast (full bar), drains to 0.0 when ready. Safe to drive a progress bar directly.
+	UFUNCTION(BlueprintPure, Category = "Inventory")
+	float GetCooldownNormalized(int32 SlotIndex) const;
+
 protected:
 	virtual void BeginPlay() override;
 

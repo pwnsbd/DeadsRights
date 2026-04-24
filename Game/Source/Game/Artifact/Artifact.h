@@ -15,8 +15,9 @@ class UCapsuleComponent;
 UENUM(BlueprintType)
 enum class EArtifactType : uint8
 {
-    None UMETA(DisplayName = "None"),
-    Beam UMETA(DisplayName = "Beam"),
+    None    UMETA(DisplayName = "None"),
+    Basic   UMETA(DisplayName = "Basic"),
+    Beam    UMETA(DisplayName = "Beam"),
     PhaseWalk UMETA(DisplayName = "Phase Walk"),
     PathFinder UMETA(DisplayName = "Path Finder"),
     Barrier UMETA(DisplayName = "Barrier"),

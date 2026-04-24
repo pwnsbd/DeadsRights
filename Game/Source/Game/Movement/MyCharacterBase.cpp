@@ -881,60 +881,29 @@ bool AMyCharacterBase::AddArtifactToInventory(AArtifact *Artifact)
 	if (!Artifact || !StorageComponent || Artifact->bIsCarried)
 		return false;
 
-	// --- NEW: HANDLE WHITE UPGRADE ORBS (CONSUMABLE) ---
-	// We intercept the 'None' type immediately so it doesn't take up a slot!
-	if (Artifact->ArtifactType == EArtifactType::None)
+	// --- HANDLE BASIC UPGRADE ORBS (CONSUMABLE) ---
+	// Upgrades the currently selected spell's cooldown. Stays on the floor if not upgradeable.
+	if (Artifact->ArtifactType == EArtifactType::Basic)
 	{
-		TArray<int32> UpgradeableSlots;
+		if (!StorageComponent->Slots.IsValidIndex(ActiveSlotIndex))
+			return false;
 
-		// Step A: Scan the inventory for any spells that are NOT maxed out
-		for (int32 i = 0; i < StorageComponent->Slots.Num(); ++i)
-		{
-			FStoredItem &SlotItem = StorageComponent->Slots[i];
+		FStoredItem &ActiveSlot = StorageComponent->Slots[ActiveSlotIndex];
 
-			// Ensure the slot actually has a spell in it
-			if (!SlotItem.IsEmpty() && IsValid(SlotItem.SourceActor))
-			{
-				AArtifact *SlottedSpell = Cast<AArtifact>(SlotItem.SourceActor);
+		if (ActiveSlot.IsEmpty() || !IsValid(ActiveSlot.SourceActor))
+			return false;
 
-				// If the spell hasn't hit its upgrade cap, add it to our lottery list!
-				// (Make sure you added CooldownUpgrades and MaxCooldownUpgrades to Artifact.h!)
-				if (SlottedSpell && SlottedSpell->CooldownUpgrades < SlottedSpell->MaxCooldownUpgrades)
-				{
-					UpgradeableSlots.Add(i);
-				}
-			}
-		}
+		AArtifact *ActiveSpell = Cast<AArtifact>(ActiveSlot.SourceActor);
+		if (!ActiveSpell || ActiveSpell->CooldownUpgrades >= ActiveSpell->MaxCooldownUpgrades)
+			return false;
 
-		// Step B: Pick a random valid spell and upgrade it!
-		if (UpgradeableSlots.Num() > 0)
-		{
-			int32 RandomIndex = UpgradeableSlots[FMath::RandRange(0, UpgradeableSlots.Num() - 1)];
+		ActiveSlot.CooldownDuration = ActiveSpell->UpgradeCooldown(ActiveSlot.CooldownDuration);
+		TotalBasicUpgradesCollected++;
 
-			FStoredItem &ChosenSlot = StorageComponent->Slots[RandomIndex];
-			AArtifact *ChosenSpell = Cast<AArtifact>(ChosenSlot.SourceActor);
-
-			if (ChosenSpell)
-			{
-				// We pass the current cooldown into the Artifact, and it returns the new math!
-				ChosenSlot.CooldownDuration = ChosenSpell->UpgradeCooldown(ChosenSlot.CooldownDuration);
-				// -------------------------------------------
-
-				TotalBasicUpgradesCollected++; // Track globally in your Character!
-
-				UE_LOG(LogTemp, Warning, TEXT("Lucky Upgrade! %s cooldown reduced to %.1f. Total Orbs Collected: %d"), *ChosenSlot.ItemName, ChosenSlot.CooldownDuration, TotalBasicUpgradesCollected);
-			}
-
-			// Destroy the orb from the ground and return true so the spawner knows it was picked up
-			Artifact->Destroy();
-			return true;
-		}
-
-		// Step C: If the list is empty, all spells are maxed out or the inventory is empty!
-		UE_LOG(LogTemp, Warning, TEXT("Cannot use upgrade! All owned spells are maxed out, or inventory is empty."));
-		return false; // Return false so the white orb stays on the floor
+		Artifact->Destroy();
+		return true;
 	}
-	// ---------------------------------------------------
+	// -----------------------------------------------
 
 	// --- ABSORB DUPLICATE CHARGES ---
 	for (FStoredItem &ExistingItem : StorageComponent->Slots)
@@ -966,27 +935,27 @@ bool AMyCharacterBase::AddArtifactToInventory(AArtifact *Artifact)
 	{
 	case EArtifactType::Beam:
 		Item.ItemName = TEXT("Red Beam");
-		Item.CooldownDuration = 15.f;
+		Item.CooldownDuration = 6.f;
 		Item.Description = TEXT("Fires a beam in your facing direction. Any thief caught in the path is destroyed.");
 		break;
 	case EArtifactType::PhaseWalk:
 		Item.ItemName = TEXT("Green Phase Walk");
-		Item.CooldownDuration = 20.f;
+		Item.CooldownDuration = 10.f;
 		Item.Description = TEXT("Pass through walls for a short time. Use it to escape or cut corners.");
 		break;
 	case EArtifactType::PathFinder:
 		Item.ItemName = TEXT("Yellow Path Finder");
-		Item.CooldownDuration = 15.f;
+		Item.CooldownDuration = 8.f;
 		Item.Description = TEXT("Reveals the shortest path to the nearest uncollected artifact.");
 		break;
 	case EArtifactType::Barrier:
 		Item.ItemName = TEXT("Blue Barrier");
-		Item.CooldownDuration = 10.f;
+		Item.CooldownDuration = 6.f;
 		Item.Description = TEXT("Raises temporary walls around your position, trapping nearby thieves.");
 		break;
 	case EArtifactType::AoEBomb:
 		Item.ItemName = TEXT("Orange AoE Bomb");
-		Item.CooldownDuration = 30.f;
+		Item.CooldownDuration = 15.f;
 		Item.Description = TEXT("Creates a large explosion that damages all nearby enemies.");
 		break;
 	}
@@ -1096,6 +1065,17 @@ void AMyCharacterBase::ScrollSlot(int32 Direction)
 
 void AMyCharacterBase::ScrollSlotUp() { ScrollSlot(-1); }
 void AMyCharacterBase::ScrollSlotDown() { ScrollSlot(+1); }
+
+void AMyCharacterBase::ResetForNewGame()
+{
+	if (StorageComponent)
+		StorageComponent->ClearAllSlots();
+
+	TotalBasicUpgradesCollected = 0;
+	ActiveSlotIndex = 0;
+	OnInventoryCleared.Broadcast();
+	OnActiveSlotChanged.Broadcast(0);
+}
 
 void AMyCharacterBase::UseActiveSlot()
 {

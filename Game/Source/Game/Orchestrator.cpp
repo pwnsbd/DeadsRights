@@ -914,6 +914,25 @@ void AOrchestrator::BeginPlay()
 	}
 }
 
+int32 AOrchestrator::GetEscapingRunnerCount() const
+{
+	int32 Count = 0;
+	for (const AMazeRunner* R : ActiveRunners)
+		if (IsValid(R) && R->CurrentState == EAIState::Escaping) Count++;
+	return Count;
+}
+
+float AOrchestrator::GetMostUrgentEscapeTimeRemaining() const
+{
+	float MinTime = TNumericLimits<float>::Max();
+	for (const AMazeRunner* R : ActiveRunners)
+	{
+		if (IsValid(R) && R->CurrentState == EAIState::Escaping)
+			MinTime = FMath::Min(MinTime, R->GetEscapeTimeRemaining());
+	}
+	return (MinTime == TNumericLimits<float>::Max()) ? 0.f : MinTime;
+}
+
 void AOrchestrator::SpawnRunners(int32 Count)
 {
 	if (!SphereActor || !MazeRunnerClass) return;

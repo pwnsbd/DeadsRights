@@ -13,6 +13,7 @@
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnActiveSlotChanged, int32, NewSlotIndex);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnDescriptionToggled, bool, bIsOpen);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnInventoryCleared);
 
 class AOrchestrator;
 class ACubeToSphere;
@@ -76,6 +77,9 @@ public:
 	// Tracks the total number of white basic upgrades collected
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Inventory|Upgrades")
 	int32 TotalBasicUpgradesCollected = 0;
+
+	/** Resets inventory state for a fresh game — clears slots, upgrade count, active slot. */
+	void ResetForNewGame();
 
 	// =========================================================================
 	// Internal helpers
@@ -154,6 +158,10 @@ public:
 	/** Fired when scroll moves to a different slot. Bind in HUD to update highlight. */
 	UPROPERTY(BlueprintAssignable, Category = "Inventory")
 	FOnActiveSlotChanged OnActiveSlotChanged;
+
+	/** Fired when the inventory is fully wiped (game restart). Bind in HUD to clear all slot icons. */
+	UPROPERTY(BlueprintAssignable, Category = "Inventory")
+	FOnInventoryCleared OnInventoryCleared;
 
 	/** Fired when Tab toggles the description panel. Bind in HUD to show/hide. */
 	UPROPERTY(BlueprintAssignable, Category = "Inventory")

@@ -440,10 +440,10 @@ void AArtifact::ActivatePathFinder()
 
     FVector TrueStartPos = PlayerChar->GetCharStandPos(PlayerChar->Face, PlayerChar->X, PlayerChar->Y);
 
-    AArtifact *Closest = nullptr;
     int32 ShortestPathLength = INT_MAX;
+    TArray<FVector> BestPath;
 
-    // 1. SMART TARGETING: Find the artifact that requires the fewest actual steps!
+    // Single pass: find closest artifact and keep its path — avoids re-running FindPath at the end.
     for (TActorIterator<AArtifact> It(GetWorld()); It; ++It)
     {
         AArtifact *Art = *It;
@@ -456,16 +456,15 @@ void AArtifact::ActivatePathFinder()
             if (TestPath.Num() < ShortestPathLength)
             {
                 ShortestPathLength = TestPath.Num();
-                Closest = Art;
+                BestPath = MoveTemp(TestPath);
             }
         }
     }
 
     CleanupPathFinder();
-    ActivePathPoints.Empty();
+    ActivePathPoints = MoveTemp(BestPath);
 
-    // 2. CHECK FOR SUCCESS OR FAILURE
-    if (Closest && Orch->Navigator->FindPath(TrueStartPos, Closest->GetActorLocation(), ActivePathPoints) && ActivePathPoints.Num() > 0)
+    if (ActivePathPoints.Num() > 0)
     {
         CurrentPathSpawnIndex = 0;
         CurrentPathCleanupIndex = 0; // <--- FIX: Reset the cleanup tracker here!
