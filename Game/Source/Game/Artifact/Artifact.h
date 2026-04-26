@@ -69,6 +69,9 @@ public:
     UPROPERTY(BlueprintReadOnly, Category = "Artifact|Ability")
     int32 CurrentCharges;
 
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Artifact|Ability")
+    float CooldownDuration = 6.f;
+
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Artifact|Upgrades")
     int32 CooldownUpgrades = 0;
 

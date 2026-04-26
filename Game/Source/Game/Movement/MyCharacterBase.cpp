@@ -931,31 +931,28 @@ bool AMyCharacterBase::AddArtifactToInventory(AArtifact *Artifact)
 	FStoredItem Item;
 	Item.ItemCategory = static_cast<EItemCategory>(Artifact->ArtifactType);
 
+	Item.CooldownDuration = Artifact->CooldownDuration;
+
 	switch (Artifact->ArtifactType)
 	{
 	case EArtifactType::Beam:
 		Item.ItemName = TEXT("Red Beam");
-		Item.CooldownDuration = 6.f;
 		Item.Description = TEXT("Fires a beam in your facing direction. Any thief caught in the path is destroyed.");
 		break;
 	case EArtifactType::PhaseWalk:
 		Item.ItemName = TEXT("Green Phase Walk");
-		Item.CooldownDuration = 10.f;
 		Item.Description = TEXT("Pass through walls for a short time. Use it to escape or cut corners.");
 		break;
 	case EArtifactType::PathFinder:
 		Item.ItemName = TEXT("Yellow Path Finder");
-		Item.CooldownDuration = 8.f;
 		Item.Description = TEXT("Reveals the shortest path to the nearest uncollected artifact.");
 		break;
 	case EArtifactType::Barrier:
 		Item.ItemName = TEXT("Blue Barrier");
-		Item.CooldownDuration = 6.f;
 		Item.Description = TEXT("Raises temporary walls around your position, trapping nearby thieves.");
 		break;
 	case EArtifactType::AoEBomb:
 		Item.ItemName = TEXT("Orange AoE Bomb");
-		Item.CooldownDuration = 15.f;
 		Item.Description = TEXT("Creates a large explosion that damages all nearby enemies.");
 		break;
 	}
