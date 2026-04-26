@@ -49,6 +49,9 @@ public:
 	UFUNCTION(BlueprintPure, Category = "AI|Escape")
 	float GetEscapeTimeRemaining() const;
 
+	UFUNCTION(BlueprintPure, Category = "Movement")
+	bool IsMoving() const { return bIsMoving; }
+
 	void FinishEscape();
 	virtual void NotifyActorBeginOverlap(AActor *OtherActor) override;
 
@@ -58,6 +61,9 @@ protected:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement")
 	float MovementSpeed = 150.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement")
+	float SurfaceOffset = 17.0f;
 
 	virtual void BeginPlay() override;
 

@@ -46,7 +46,7 @@ int32 AMazeRunner::FindClosestPathIndex(const TArray<FVector> &NewPath)
 	for (int32 i = 0; i < NewPath.Num(); i++)
 	{
 		// Path nodes are stored as directions from center; convert to local surface loc
-		FVector NodeLocal = NewPath[i] + (NewPath[i].GetSafeNormal() * 17.0f);
+		FVector NodeLocal = NewPath[i] + (NewPath[i].GetSafeNormal() * SurfaceOffset);
 		float DistSq = FVector::DistSquared(CurrentLocal, NodeLocal);
 
 		if (DistSq < BestDistSq)
@@ -233,7 +233,7 @@ void AMazeRunner::Tick(float DeltaTime)
 	// --- 4. MOVEMENT (Unchanged) ---
 	FVector CurrentLocal = GetRootComponent()->GetRelativeLocation();
 	FVector BaseTarget = PathToFollow[CurrentTargetIndex];
-	FVector TargetLocal = BaseTarget + (BaseTarget.GetSafeNormal() * 17.0f);
+	FVector TargetLocal = BaseTarget + (BaseTarget.GetSafeNormal() * SurfaceOffset);
 
 	if (FVector::Dist(CurrentLocal, TargetLocal) < 25.0f)
 	{
@@ -266,7 +266,7 @@ void AMazeRunner::Tick(float DeltaTime)
 			return;
 		}
 		BaseTarget = PathToFollow[CurrentTargetIndex];
-		TargetLocal = BaseTarget + (BaseTarget.GetSafeNormal() * 17.0f);
+		TargetLocal = BaseTarget + (BaseTarget.GetSafeNormal() * SurfaceOffset);
 	}
 
 	FVector NewLocal = FMath::VInterpConstantTo(CurrentLocal, TargetLocal, DeltaTime, MovementSpeed);

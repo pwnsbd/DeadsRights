@@ -61,6 +61,7 @@ private:
 	bool bStepTweenActive = false;
 	float StepTweenElapsed = 0.f;
 
+
 	UPROPERTY(EditAnywhere, Category="Grid|Movement")
 	float StepTweenDuration = 0.12f;
 

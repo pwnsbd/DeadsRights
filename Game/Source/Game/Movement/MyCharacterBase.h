@@ -74,6 +74,9 @@ public:
 	UPROPERTY(BlueprintReadWrite, Category = "Ability")
 	bool bIsPhasing = false;
 
+	UFUNCTION(BlueprintPure, Category = "Movement")
+	bool IsMoving() const { return bTweenActive; }
+
 	// Tracks the total number of white basic upgrades collected
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Inventory|Upgrades")
 	int32 TotalBasicUpgradesCollected = 0;
