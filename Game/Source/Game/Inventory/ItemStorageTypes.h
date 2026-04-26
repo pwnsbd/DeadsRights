@@ -36,6 +36,9 @@ struct GAME_API FStoredItem
 	float CooldownDuration = 0.f;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Inventory")
+	float BaseCooldownDuration = 0.f;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Inventory")
 	float NextUsableTime = 0.f;
 
 	// Wave index in which this item was picked up.

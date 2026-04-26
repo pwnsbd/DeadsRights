@@ -932,6 +932,7 @@ bool AMyCharacterBase::AddArtifactToInventory(AArtifact *Artifact)
 	Item.ItemCategory = static_cast<EItemCategory>(Artifact->ArtifactType);
 
 	Item.CooldownDuration = Artifact->CooldownDuration;
+	Item.BaseCooldownDuration = Artifact->CooldownDuration;
 
 	switch (Artifact->ArtifactType)
 	{
@@ -1007,15 +1008,29 @@ void AMyCharacterBase::ActivateArtifactInSlot(int32 SlotIndex)
 	if (!StorageComponent || !StorageComponent->Slots.IsValidIndex(SlotIndex))
 		return;
 
-	// UseSlot handles cooldown — returns false if on cooldown or slot is empty
+	FStoredItem& Slot = StorageComponent->Slots[SlotIndex];
+	if (Slot.IsEmpty())
+		return;
+
+	// Check cooldown before consuming an upgrade stack
+	const float Now = GetWorld()->GetTimeSeconds();
+	if (Now < Slot.NextUsableTime)
+		return;
+
+	AArtifact* Artifact = Cast<AArtifact>(Slot.SourceActor);
+	if (IsValid(Artifact))
+	{
+		// Decrement upgrade stack (floor 0), recalculate cooldown for this cast
+		Artifact->CooldownUpgrades = FMath::Max(0, Artifact->CooldownUpgrades - 1);
+		Slot.CooldownDuration = Artifact->CalculateCooldownAtLevel(
+			Slot.BaseCooldownDuration, Artifact->CooldownUpgrades);
+	}
+
 	if (!StorageComponent->UseSlot(SlotIndex))
 		return;
 
-	AArtifact *Artifact = Cast<AArtifact>(StorageComponent->Slots[SlotIndex].SourceActor);
-	if (!IsValid(Artifact))
-		return;
-
-	Artifact->ActivateAbility();
+	if (IsValid(Artifact))
+		Artifact->ActivateAbility();
 }
 
 void AMyCharacterBase::UseArtifactSlot1() { ActivateArtifactInSlot(0); }

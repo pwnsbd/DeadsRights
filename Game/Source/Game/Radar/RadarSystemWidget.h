@@ -90,6 +90,21 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Radar|Colors")
 	FLinearColor EnemyCastingColor = FLinearColor(1.f, 0.5f, 0.0f, 1.f);
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Radar|Style")
+	float ArtifactDotRadius = 4.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Radar|Colors")
+	FLinearColor BeamRadarColor = FLinearColor(1.f, 0.1f, 0.1f, 1.f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Radar|Colors")
+	FLinearColor PhaseWalkRadarColor = FLinearColor(0.1f, 0.9f, 0.2f, 1.f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Radar|Colors")
+	FLinearColor PathFinderRadarColor = FLinearColor(1.f, 0.9f, 0.1f, 1.f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Radar|Colors")
+	FLinearColor AoEBombRadarColor = FLinearColor(1.f, 0.5f, 0.0f, 1.f);
+
 	// Faint rings at 33% and 66% RadarRadius showing distance zones
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Radar|Colors")
 	FLinearColor DistanceRingColor = FLinearColor(0.9f, 0.65f, 0.15f, 0.18f);

@@ -3,10 +3,12 @@
 #include "../Movement/MyCharacterBase.h"
 #include "../Conversion/CubeToSphere.h"
 #include "../AI/MazeRunner.h"
+#include "../Artifact/Artifact.h"
 
 #include "Kismet/GameplayStatics.h"
 #include "Camera/PlayerCameraManager.h"
 #include "Rendering/DrawElements.h"
+#include "EngineUtils.h"
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Lifecycle
@@ -187,6 +189,37 @@ int32 URadarSystemWidget::NativePaint(
 		if (Depth < 0.f) DotColor.A *= 0.25f;
 
 		DrawDot(OutDrawElements, Layer + 1, AllottedGeometry, DotPos, EnemyDotRadius, DotColor);
+	}
+
+	// ── Spell artifact dots (only when all AI are dead) ──────────────────────
+	int32 ValidRunners = 0;
+	for (AMazeRunner* R : Orch->ActiveRunners)
+		if (IsValid(R)) ValidRunners++;
+
+	if (ValidRunners == 0)
+	{
+		for (TActorIterator<AArtifact> It(GetWorld()); It; ++It)
+		{
+			AArtifact* Art = *It;
+			if (!IsValid(Art) || Art->bIsCarried || Art->IsHidden()) continue;
+
+			FLinearColor ArtColor;
+			switch (Art->ArtifactType)
+			{
+				case EArtifactType::Beam:       ArtColor = BeamRadarColor;       break;
+				case EArtifactType::PhaseWalk:  ArtColor = PhaseWalkRadarColor;  break;
+				case EArtifactType::PathFinder: ArtColor = PathFinderRadarColor; break;
+				case EArtifactType::AoEBomb:    ArtColor = AoEBombRadarColor;    break;
+				default: continue;
+			}
+
+			FVector UnitDir = (Art->GetActorLocation() - Axes.SphereCenter).GetSafeNormal();
+			float Depth;
+			FVector2D DotPos = ProjectPoint(UnitDir, Axes, Center, Depth);
+			if (Depth < 0.f) ArtColor.A *= 0.25f;
+
+			DrawDot(OutDrawElements, Layer + 2, AllottedGeometry, DotPos, ArtifactDotRadius, ArtColor);
+		}
 	}
 
 	return Super::NativePaint(Args, AllottedGeometry, MyCullingRect,
