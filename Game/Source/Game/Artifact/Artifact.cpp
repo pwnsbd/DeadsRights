@@ -83,34 +83,13 @@ float AArtifact::UpgradePowerLevel()
 
 float AArtifact::UpgradeCooldown(float CurrentCooldown)
 {
-    // Track that we successfully absorbed a white orb
     CooldownUpgrades++;
+    return FMath::Max(CurrentCooldown - CooldownReductionPerUpgrade, MinCooldownAfterUpgrades);
+}
 
-    switch (ArtifactType)
-    {
-    case EArtifactType::Beam:
-        // Reduce by 0.5s, but never drop below 1.0s
-        return (CurrentCooldown > 1.0f) ? CurrentCooldown - 0.5f : 1.0f;
-
-    case EArtifactType::PhaseWalk:
-        // Reduce by 1.0s, but never drop below 3.0s
-        return (CurrentCooldown > 3.0f) ? CurrentCooldown - 1.0f : 3.0f;
-
-    case EArtifactType::PathFinder:
-        // Reduce by 0.5s, but never drop below 2.0s
-        return (CurrentCooldown > 2.0f) ? CurrentCooldown - 0.5f : 2.0f;
-
-    case EArtifactType::Barrier:
-        // Reduce by 1.0s, but never drop below 4.0s
-        return (CurrentCooldown > 4.0f) ? CurrentCooldown - 1.0f : 4.0f;
-
-    case EArtifactType::AoEBomb:
-        // Reduce by 2.0s, but never drop below 5.0s
-        return (CurrentCooldown > 5.0f) ? CurrentCooldown - 2.0f : 5.0f;
-
-    default:
-        return CurrentCooldown; // Fallback so the compiler is happy
-    }
+float AArtifact::CalculateCooldownAtLevel(float BaseCooldown, int32 Level) const
+{
+    return FMath::Max(BaseCooldown - CooldownReductionPerUpgrade * Level, MinCooldownAfterUpgrades);
 }
 
 // ============================================================

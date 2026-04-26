@@ -76,7 +76,15 @@ public:
     int32 CooldownUpgrades = 0;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Artifact|Upgrades")
-    int32 MaxCooldownUpgrades = 5; // The hard cap of upgrades per spell
+    int32 MaxCooldownUpgrades = 5;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Artifact|Upgrades")
+    float CooldownReductionPerUpgrade = 0.5f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Artifact|Upgrades")
+    float MinCooldownAfterUpgrades = 1.0f;
+
+    float CalculateCooldownAtLevel(float BaseCooldown, int32 Level) const;
 
     // ==========================================
     // MAZE INTEGRATION
