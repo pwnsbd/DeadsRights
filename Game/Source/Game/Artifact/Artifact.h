@@ -145,7 +145,7 @@ public:
     USoundBase *ActivationSound = nullptr;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Artifact|Audio")
-    USoundBase *BeamActivationSound = nullptr;
+    float ActivationSoundVolume = 0.35f;
 
     // ==========================================
     // FUNCTIONS

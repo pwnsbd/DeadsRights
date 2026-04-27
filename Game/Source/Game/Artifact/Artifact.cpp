@@ -37,8 +37,7 @@ AArtifact::AArtifact()
     }
 
     PickupSound = nullptr;
-    ActivationSound = LoadObject<USoundBase>(nullptr, TEXT("/Game/sound/Scarab_artifact_activation.Scarab_artifact_activation"));
-    BeamActivationSound = LoadObject<USoundBase>(nullptr, TEXT("/Game/sound/Ankh_artifact_activation.Ankh_artifact_activation"));
+    ActivationSound = LoadObject<USoundBase>(nullptr, TEXT("/Game/sound/Ankh_artifact_activation.Ankh_artifact_activation"));
 
     MeshComponent->SetSimulatePhysics(false);
     MeshComponent->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
@@ -204,13 +203,9 @@ void AArtifact::ActivateAbility()
     if (!Carrier || !SphereActor || CurrentCharges <= 0)
         return;
 
-    USoundBase *SoundToPlay = (ArtifactType == EArtifactType::Beam && BeamActivationSound)
-        ? BeamActivationSound
-        : ActivationSound;
-
-    if (SoundToPlay)
+    if (ActivationSound)
     {
-        UGameplayStatics::PlaySoundAtLocation(this, SoundToPlay, Carrier->GetActorLocation());
+        UGameplayStatics::PlaySoundAtLocation(this, ActivationSound, Carrier->GetActorLocation(), ActivationSoundVolume);
     }
 
     FMazeNode PlayerCell = SphereActor->WorldToMazeCell(Carrier->GetActorLocation());
