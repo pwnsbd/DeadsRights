@@ -11,6 +11,7 @@ class UStaticMeshComponent;
 class USphereComponent;
 class UMazeNavigator;
 class UCapsuleComponent;
+class USoundBase;
 
 UENUM(BlueprintType)
 enum class EArtifactType : uint8
@@ -136,6 +137,15 @@ public:
 
     UFUNCTION(BlueprintCallable, Category = "Artifact|Visual")
     void ApplyDebugVisuals();
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Artifact|Audio")
+    USoundBase *PickupSound = nullptr;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Artifact|Audio")
+    USoundBase *ActivationSound = nullptr;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Artifact|Audio")
+    USoundBase *BeamActivationSound = nullptr;
 
     // ==========================================
     // FUNCTIONS

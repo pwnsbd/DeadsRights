@@ -15,6 +15,7 @@
 #include "../AI/MazeRunner.h"
 #include "Particles/ParticleSystemComponent.h"
 #include "../Orchestrator.h"
+#include "Sound/SoundBase.h"
 
 // ============================================================
 // Initialization
@@ -34,6 +35,10 @@ AArtifact::AArtifact()
     {
         MeshComponent->SetStaticMesh(SphereMesh.Object);
     }
+
+    PickupSound = nullptr;
+    ActivationSound = LoadObject<USoundBase>(nullptr, TEXT("/Game/sound/Scarab_artifact_activation.Scarab_artifact_activation"));
+    BeamActivationSound = LoadObject<USoundBase>(nullptr, TEXT("/Game/sound/Ankh_artifact_activation.Ankh_artifact_activation"));
 
     MeshComponent->SetSimulatePhysics(false);
     MeshComponent->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
@@ -152,6 +157,11 @@ void AArtifact::PickUp(AActor *NewCarrier)
             return;
     }
 
+    if (PickupSound)
+    {
+        UGameplayStatics::PlaySoundAtLocation(this, PickupSound, GetActorLocation());
+    }
+
     bIsCarried = true;
     Carrier = NewCarrier;
 
@@ -193,6 +203,15 @@ void AArtifact::ActivateAbility()
 {
     if (!Carrier || !SphereActor || CurrentCharges <= 0)
         return;
+
+    USoundBase *SoundToPlay = (ArtifactType == EArtifactType::Beam && BeamActivationSound)
+        ? BeamActivationSound
+        : ActivationSound;
+
+    if (SoundToPlay)
+    {
+        UGameplayStatics::PlaySoundAtLocation(this, SoundToPlay, Carrier->GetActorLocation());
+    }
 
     FMazeNode PlayerCell = SphereActor->WorldToMazeCell(Carrier->GetActorLocation());
     FVector Forward = Carrier->GetActorForwardVector();

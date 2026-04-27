@@ -8,6 +8,8 @@
 
 class AOrchestrator;
 class AMyCharacterBase;
+class UAudioComponent;
+class USoundBase;
 
 // ── Delegates (declared before UCLASS so Blueprint can use them) ──────────────
 
@@ -163,6 +165,30 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Level Manager|Config")
 	float LevelTransitionDelay = 2.f;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Level Manager|Audio")
+	USoundBase* BackgroundMusic = nullptr;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Level Manager|Audio")
+	USoundBase* CountdownTickSound = nullptr;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Level Manager|Audio")
+	USoundBase* CountdownCompleteSound = nullptr;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Level Manager|Audio")
+	USoundBase* LevelWonSound = nullptr;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Level Manager|Audio")
+	USoundBase* GameLostSound = nullptr;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Level Manager|Audio")
+	bool bStartBackgroundMusicOnBeginPlay = true;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Level Manager|Transitions")
+	bool bFadeInFromBlackOnBeginPlay = true;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Level Manager|Transitions", meta = (ClampMin = "0.0", UIMin = "0.0"))
+	float BeginPlayFadeInDuration = 0.75f;
+
 private:
 	/** Fired one tick after BeginPlay — all actors are ready by then. */
 	void OnWorldReady();
@@ -198,4 +224,7 @@ private:
 
 	/** Called when countdown reaches 0. */
 	void OnCountdownComplete();
+
+	UPROPERTY()
+	UAudioComponent* BackgroundMusicComponent = nullptr;
 };

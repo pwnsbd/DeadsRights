@@ -7,6 +7,8 @@
 
 class USkeletalMeshComponent;
 class ACubeToSphere;
+class USoundBase;
+class UAudioComponent;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnPathCompletedSignature);
 
@@ -45,6 +47,8 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "AI|Health")
 	void Die();
 
+	void FinishDeath();
+
 	/** Seconds remaining on the escape timer. Returns 0 if not currently escaping. */
 	UFUNCTION(BlueprintPure, Category = "AI|Escape")
 	float GetEscapeTimeRemaining() const;
@@ -65,10 +69,25 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement")
 	float SurfaceOffset = 17.0f;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AI|Audio")
+	USoundBase *DeathSound = nullptr;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AI|Audio")
+	USoundBase *EscapeTimerSound = nullptr;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AI|Audio")
+	float DeathDisappearDelay = 0.35f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AI|Death")
+	float DeathSquashYScale = 0.1f;
+
 	virtual void BeginPlay() override;
 
 	UPROPERTY()
 	class UMaterialInstanceDynamic *DynamicMat;
+
+	UPROPERTY()
+	TArray<TObjectPtr<class UMaterialInstanceDynamic>> DynamicMats;
 
 	void SetAIColor(FLinearColor NewColor);
 
@@ -88,7 +107,14 @@ private:
 	TArray<FVector> PathToFollow;
 	int32 CurrentTargetIndex = 0;
 	bool bIsMoving = false;
+	bool bIsDying = false;
 	ACubeToSphere *TargetSphere = nullptr;
+	FTimerHandle DeathTimerHandle;
+
+	UPROPERTY()
+	UAudioComponent *EscapeTimerAudioComponent = nullptr;
+
+	void StopEscapeTimerSound();
 	// --- ADD THIS LINE TO FIX THE ERROR ---
 	/** Tracks the player's last known location to dynamically update paths. */
 	FVector LastPlayerPosForPath = FVector::ZeroVector;

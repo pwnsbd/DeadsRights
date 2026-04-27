@@ -5,6 +5,10 @@
 #include "../Artifact/Artifact.h"
 #include "GameFramework/Pawn.h"
 #include "MazeNavigator.h"
+#include "Kismet/GameplayStatics.h"
+#include "Sound/SoundBase.h"
+#include "Components/AudioComponent.h"
+#include "Materials/MaterialInstanceDynamic.h"
 
 AMazeRunner::AMazeRunner()
 {
@@ -16,20 +20,58 @@ AMazeRunner::AMazeRunner()
 	MeshComp->SetGenerateOverlapEvents(true);
 	MeshComp->SetCanEverAffectNavigation(false);
 	MeshComp->SetWorldScale3D(FVector(0.5f, 0.5f, 0.5f));
+
+	DeathSound = LoadObject<USoundBase>(nullptr, TEXT("/Game/sound/thiefDeathSound.thiefDeathSound"));
+	EscapeTimerSound = LoadObject<USoundBase>(nullptr, TEXT("/Game/sound/Artifact_Timer.Artifact_Timer"));
 }
 
 void AMazeRunner::BeginPlay()
 {
 	Super::BeginPlay();
 	if (MeshComp)
-		DynamicMat = MeshComp->CreateDynamicMaterialInstance(0);
+	{
+		DynamicMats.Empty();
+		const int32 MaterialCount = MeshComp->GetNumMaterials();
+		for (int32 Index = 0; Index < MaterialCount; ++Index)
+		{
+			if (UMaterialInstanceDynamic *MID = MeshComp->CreateDynamicMaterialInstance(Index))
+			{
+				DynamicMats.Add(MID);
+				if (Index == 0)
+				{
+					DynamicMat = MID;
+				}
+			}
+		}
+	}
 	SetAIColor(FLinearColor::Green);
 }
 
 void AMazeRunner::SetAIColor(FLinearColor NewColor)
 {
-	if (DynamicMat)
-		DynamicMat->SetVectorParameterValue(TEXT("Color"), NewColor);
+	if (MeshComp)
+	{
+		const FVector ColorVector(NewColor.R, NewColor.G, NewColor.B);
+		MeshComp->SetVectorParameterValueOnMaterials(TEXT("Color"), ColorVector);
+		MeshComp->SetVectorParameterValueOnMaterials(TEXT("BaseColor"), ColorVector);
+		MeshComp->SetVectorParameterValueOnMaterials(TEXT("Base Color"), ColorVector);
+		MeshComp->SetVectorParameterValueOnMaterials(TEXT("Tint"), ColorVector);
+		MeshComp->SetVectorParameterValueOnMaterials(TEXT("EmissiveColor"), ColorVector * 0.25f);
+	}
+
+	for (UMaterialInstanceDynamic *MID : DynamicMats)
+	{
+		if (!MID)
+		{
+			continue;
+		}
+
+		MID->SetVectorParameterValue(TEXT("Color"), NewColor);
+		MID->SetVectorParameterValue(TEXT("BaseColor"), NewColor);
+		MID->SetVectorParameterValue(TEXT("Base Color"), NewColor);
+		MID->SetVectorParameterValue(TEXT("Tint"), NewColor);
+		MID->SetVectorParameterValue(TEXT("EmissiveColor"), NewColor * 0.25f);
+	}
 }
 
 // IN MAZERUNNER.CPP
@@ -87,11 +129,38 @@ float AMazeRunner::GetEscapeTimeRemaining() const
 
 void AMazeRunner::Die()
 {
+	if (bIsDying)
+	{
+		return;
+	}
+
+	StopEscapeTimerSound();
+
+	const bool bWasEscaping = CurrentState == EAIState::Escaping;
+	bIsDying = true;
+	bIsMoving = false;
+	CurrentState = EAIState::Idle;
+
+	if (MeshComp)
+	{
+		MeshComp->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		MeshComp->SetGenerateOverlapEvents(false);
+
+		FVector SquashedScale = MeshComp->GetRelativeScale3D();
+		SquashedScale.Y = DeathSquashYScale;
+		MeshComp->SetRelativeScale3D(SquashedScale);
+	}
+
+	if (DeathSound)
+	{
+		UGameplayStatics::PlaySoundAtLocation(this, DeathSound, GetActorLocation());
+	}
+
 	GetWorldTimerManager().ClearTimer(EscapeTimerHandle);
 	GetWorldTimerManager().ClearTimer(RePathTimerHandle);
 
 	// Safely drop the artifact if we are holding it
-	if (MyTarget && CurrentState == EAIState::Escaping)
+	if (MyTarget && bWasEscaping)
 	{
 		AArtifact *DroppedArtifact = MyTarget;
 		MyTarget = nullptr;
@@ -131,7 +200,22 @@ void AMazeRunner::Die()
 			Orch->OnEscapeCancelled.Broadcast();
 	}
 
-	this->Destroy();
+	const float Delay = FMath::Max(0.01f, DeathDisappearDelay);
+	GetWorldTimerManager().SetTimer(DeathTimerHandle, this, &AMazeRunner::FinishDeath, Delay, false);
+}
+
+void AMazeRunner::FinishDeath()
+{
+	Destroy();
+}
+
+void AMazeRunner::StopEscapeTimerSound()
+{
+	if (EscapeTimerAudioComponent)
+	{
+		EscapeTimerAudioComponent->Stop();
+		EscapeTimerAudioComponent = nullptr;
+	}
 }
 
 void AMazeRunner::NotifyActorBeginOverlap(AActor *OtherActor)
@@ -147,6 +231,11 @@ void AMazeRunner::NotifyActorBeginOverlap(AActor *OtherActor)
 void AMazeRunner::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
+
+	if (bIsDying)
+	{
+		return;
+	}
 
 	APawn *PlayerPawn = GetWorld()->GetFirstPlayerController()->GetPawn();
 	AOrchestrator *Orchestrator = Cast<AOrchestrator>(GetOwner());
@@ -259,6 +348,18 @@ void AMazeRunner::Tick(float DeltaTime)
 				CurrentState = EAIState::Escaping;
 				GetWorldTimerManager().SetTimer(EscapeTimerHandle, this, &AMazeRunner::FinishEscape, 10.0f, false);
 
+				if (EscapeTimerSound)
+				{
+					StopEscapeTimerSound();
+					EscapeTimerAudioComponent = UGameplayStatics::SpawnSoundAttached(
+						EscapeTimerSound,
+						GetRootComponent(),
+						NAME_None,
+						FVector::ZeroVector,
+						EAttachLocation::KeepRelativeOffset,
+						true);
+				}
+
 				if (AOrchestrator *Orch = Cast<AOrchestrator>(GetOwner()))
 					Orch->OnArtifactCaptured.Broadcast(10.f);
 			}
@@ -283,6 +384,7 @@ void AMazeRunner::Tick(float DeltaTime)
 void AMazeRunner::FinishEscape()
 {
 	AOrchestrator *Orchestrator = Cast<AOrchestrator>(GetOwner());
+	StopEscapeTimerSound();
 
 	if (MyTarget)
 	{

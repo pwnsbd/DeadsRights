@@ -4,12 +4,22 @@
 #include "../Artifact/MazeArtifactManager.h"
 #include "../AI/MazeRunner.h"
 #include "../Inventory/ItemStorageComponent.h"
+#include "../GameAudioInstance.h"
 #include "EngineUtils.h"
 #include "Kismet/GameplayStatics.h"
+#include "Components/AudioComponent.h"
+#include "Sound/SoundBase.h"
+#include "Camera/PlayerCameraManager.h"
 
 AGameLevelManager::AGameLevelManager()
 {
 	PrimaryActorTick.bCanEverTick = false;
+
+	BackgroundMusic = LoadObject<USoundBase>(nullptr, TEXT("/Game/sound/CryptGameLoop.CryptGameLoop"));
+	CountdownTickSound = LoadObject<USoundBase>(nullptr, TEXT("/Game/sound/ButtonPress.ButtonPress"));
+	CountdownCompleteSound = nullptr;
+	LevelWonSound = nullptr;
+	GameLostSound = nullptr;
 
 	// ── Default level configs (15 hand-crafted levels) ──────────────────────
 	// Wave 1 (L1-3): introduce Beam
@@ -80,6 +90,27 @@ void AGameLevelManager::OnWorldReady()
 	// Capture base seed once — per-level offsets are added on top of this
 	BaseSeed = Orchestrator->Seed;
 
+	if (bStartBackgroundMusicOnBeginPlay && BackgroundMusic && !BackgroundMusicComponent)
+	{
+		// Background music normally starts in UGameAudioInstance so it can play on the main menu.
+		// This stays as an optional fallback if that class is not configured.
+		if (GetGameInstance() && !GetGameInstance()->IsA(UGameAudioInstance::StaticClass()))
+		{
+			BackgroundMusicComponent = UGameplayStatics::SpawnSound2D(this, BackgroundMusic, 1.0f, 1.0f, 0.0f, nullptr, true);
+		}
+	}
+
+	if (bFadeInFromBlackOnBeginPlay)
+	{
+		if (APlayerController* PC = GetWorld()->GetFirstPlayerController())
+		{
+			if (PC->PlayerCameraManager)
+			{
+				PC->PlayerCameraManager->StartCameraFade(1.0f, 0.0f, BeginPlayFadeInDuration, FLinearColor::Black, false, false);
+			}
+		}
+	}
+
 	StartCountdown();
 }
 
@@ -149,6 +180,10 @@ void AGameLevelManager::StartCountdown()
 void AGameLevelManager::OnCountdownTick()
 {
 	UE_LOG(LogTemp, Log, TEXT("[LevelManager] %d..."), CountdownSecondsRemaining);
+	if (CountdownTickSound)
+	{
+		UGameplayStatics::PlaySound2D(this, CountdownTickSound);
+	}
 	OnCountdownTickDelegate.Broadcast(CountdownSecondsRemaining);
 
 	CountdownSecondsRemaining--;
@@ -163,6 +198,10 @@ void AGameLevelManager::OnCountdownTick()
 void AGameLevelManager::OnCountdownComplete()
 {
 	UE_LOG(LogTemp, Log, TEXT("[LevelManager] GO! Level %d"), CurrentLevelIndex + 1);
+	if (CountdownCompleteSound)
+	{
+		UGameplayStatics::PlaySound2D(this, CountdownCompleteSound);
+	}
 
 	// Unfreeze player and restore game input mode (cursor may have been shown on lose screen)
 	if (PlayerCharacter)
@@ -294,6 +333,10 @@ void AGameLevelManager::OnLevelWon()
 	CurrentState = EGameLevelState::LevelWon;
 
 	UE_LOG(LogTemp, Log, TEXT("[LevelManager] === LEVEL %d COMPLETE! ==="), CurrentLevelIndex + 1);
+	if (LevelWonSound)
+	{
+		UGameplayStatics::PlaySound2D(this, LevelWonSound);
+	}
 	OnLevelWonDelegate.Broadcast(CurrentLevelIndex);
 
 	GetWorldTimerManager().SetTimer(
@@ -368,6 +411,10 @@ void AGameLevelManager::OnGameLost()
 
 	UE_LOG(LogTemp, Log, TEXT("[LevelManager] === GAME LOST on Wave %d! Waiting for player to restart. ==="),
 		GetCurrentWaveNumber());
+	if (GameLostSound)
+	{
+		UGameplayStatics::PlaySound2D(this, GameLostSound);
+	}
 
 	// Freeze player input
 	if (PlayerCharacter)
