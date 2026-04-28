@@ -130,6 +130,7 @@ void UGameAudioInstance::CrossfadeToGameMusic()
 	CurrentMenuMusicVolume = 0.0f;
 	CurrentGameMusicVolume = GameMusicVolume;
 
+	StartMenuMusic();
 	StartGameMusic();
 
 	if (MenuMusicComponent)
@@ -140,6 +141,29 @@ void UGameAudioInstance::CrossfadeToGameMusic()
 	if (GameMusicComponent)
 	{
 		GameMusicComponent->AdjustVolume(MusicCrossfadeDuration, GameMusicVolume);
+	}
+}
+
+void UGameAudioInstance::CrossfadeToMenuMusic()
+{
+	CurrentMenuMusicVolume = MenuMusicVolume;
+	CurrentGameMusicVolume = 0.0f;
+
+	StartMenuMusic();
+	StartGameMusic();
+
+	if (MenuMusicComponent)
+	{
+		if (!MenuMusicComponent->IsPlaying())
+		{
+			MenuMusicComponent->Play();
+		}
+		MenuMusicComponent->AdjustVolume(MusicCrossfadeDuration, MenuMusicVolume);
+	}
+
+	if (GameMusicComponent)
+	{
+		GameMusicComponent->AdjustVolume(MusicCrossfadeDuration, 0.0f);
 	}
 }
 

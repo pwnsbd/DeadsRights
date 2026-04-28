@@ -16,6 +16,12 @@ public:
 	virtual void OnStart() override;
 	virtual void Shutdown() override;
 
+	UFUNCTION(BlueprintCallable, Category = "Audio")
+	void CrossfadeToMenuMusic();
+
+	UFUNCTION(BlueprintCallable, Category = "Audio")
+	void CrossfadeToGameMusic();
+
 protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Audio")
 	USoundBase *MenuMusic = nullptr;
@@ -51,7 +57,6 @@ private:
 	void RestartGameMusic();
 	void StartMenuMusic();
 	void StartGameMusic();
-	void CrossfadeToGameMusic();
 	void ForceGameMusicAudible();
 	bool IsMainMenuMap(const FString &MapName) const;
 	bool IsGameLevelMap(const FString &MapName) const;

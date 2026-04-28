@@ -411,6 +411,10 @@ void AGameLevelManager::OnGameLost()
 	{
 		UGameplayStatics::PlaySound2D(this, GameLostSound);
 	}
+	if (UGameAudioInstance* AudioInstance = GetGameInstance<UGameAudioInstance>())
+	{
+		AudioInstance->CrossfadeToMenuMusic();
+	}
 
 	// Freeze player input
 	if (PlayerCharacter)
@@ -441,6 +445,10 @@ void AGameLevelManager::OnGameLost()
 void AGameLevelManager::RestartGame()
 {
 	UE_LOG(LogTemp, Log, TEXT("[LevelManager] Restarting from Level 1..."));
+	if (UGameAudioInstance* AudioInstance = GetGameInstance<UGameAudioInstance>())
+	{
+		AudioInstance->CrossfadeToGameMusic();
+	}
 
 	// Clear player inventory and reset upgrade tracking
 	if (PlayerCharacter)
