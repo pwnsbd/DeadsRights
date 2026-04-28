@@ -16,7 +16,7 @@ AGameLevelManager::AGameLevelManager()
 	PrimaryActorTick.bCanEverTick = false;
 
 	BackgroundMusic = LoadObject<USoundBase>(nullptr, TEXT("/Game/sound/CryptGameLoop.CryptGameLoop"));
-	CountdownTickSound = LoadObject<USoundBase>(nullptr, TEXT("/Game/sound/ButtonPress.ButtonPress"));
+	CountdownTickSound = nullptr;
 	CountdownCompleteSound = nullptr;
 	LevelWonSound = nullptr;
 	GameLostSound = nullptr;
@@ -180,10 +180,6 @@ void AGameLevelManager::StartCountdown()
 void AGameLevelManager::OnCountdownTick()
 {
 	UE_LOG(LogTemp, Log, TEXT("[LevelManager] %d..."), CountdownSecondsRemaining);
-	if (CountdownTickSound)
-	{
-		UGameplayStatics::PlaySound2D(this, CountdownTickSound);
-	}
 	OnCountdownTickDelegate.Broadcast(CountdownSecondsRemaining);
 
 	CountdownSecondsRemaining--;

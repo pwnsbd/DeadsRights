@@ -22,6 +22,8 @@ class UCapsuleComponent;
 class UStaticMeshComponent;
 class UCameraComponent;
 class UInputComponent;
+class USoundBase;
+class UAudioComponent;
 class AArtifact;
 
 /**
@@ -248,6 +250,21 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Maze|Movement")
 	float StepDuration = 0.18f;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Maze|Audio")
+	TArray<TObjectPtr<USoundBase>> MovementSounds;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Maze|Audio")
+	float MovementSoundVolume = 0.65f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Maze|Audio")
+	float MovementSoundPitchMin = 0.96f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Maze|Audio")
+	float MovementSoundPitchMax = 1.04f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Maze|Audio")
+	float MovementSoundMaxDuration = 0.16f;
+
 	// =========================================================================
 	// Tuning — Camera
 	// =========================================================================
@@ -342,4 +359,10 @@ private:
 	// the tween completes, making the movement feel responsive.
 	bool bMoveQueued = false;
 	EMazeDir QueuedDir = EMazeDir::N;
+
+	UPROPERTY()
+	TObjectPtr<UAudioComponent> ActiveMovementSound = nullptr;
+
+	FTimerHandle MovementSoundStopTimerHandle;
+	void StopMovementSound();
 };

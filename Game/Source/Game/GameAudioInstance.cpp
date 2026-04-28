@@ -10,25 +10,29 @@ void UGameAudioInstance::OnStart()
 {
 	Super::OnStart();
 
-	if (!BackgroundMusic)
+	if (!MenuMusic)
 	{
-		BackgroundMusic = LoadObject<USoundBase>(nullptr, TEXT("/Game/sound/CryptGameLoop.CryptGameLoop"));
+		MenuMusic = LoadObject<USoundBase>(nullptr, TEXT("/Game/sound/CryptGameLoop.CryptGameLoop"));
 	}
 
-	if (!MenuToGameTransitionSound)
+	if (!GameMusic)
 	{
-		MenuToGameTransitionSound = LoadObject<USoundBase>(nullptr, TEXT("/Game/sound/BeginGameSound.BeginGameSound"));
+		GameMusic = LoadObject<USoundBase>(nullptr, TEXT("/Game/sound/crypt_game_default_rough_mix_ver_1_0.crypt_game_default_rough_mix_ver_1_0"));
 	}
 
-	StartBackgroundMusic();
+	StartMenuMusic();
+	StartGameMusic();
 
 	FCoreUObjectDelegates::PreLoadMap.RemoveAll(this);
 	FCoreUObjectDelegates::PreLoadMap.AddUObject(this, &UGameAudioInstance::HandlePreLoadMap);
+	FCoreUObjectDelegates::PostLoadMapWithWorld.RemoveAll(this);
+	FCoreUObjectDelegates::PostLoadMapWithWorld.AddUObject(this, &UGameAudioInstance::HandlePostLoadMap);
 }
 
 void UGameAudioInstance::Shutdown()
 {
 	FCoreUObjectDelegates::PreLoadMap.RemoveAll(this);
+	FCoreUObjectDelegates::PostLoadMapWithWorld.RemoveAll(this);
 	Super::Shutdown();
 }
 
@@ -41,16 +45,17 @@ void UGameAudioInstance::HandlePreLoadMap(const FString &MapName)
 	}
 
 	const FString CurrentMapName = World->GetMapName();
-	if (IsMainMenuMap(CurrentMapName) && IsGameLevelMap(MapName) && MenuToGameTransitionSound)
+	if (IsMainMenuMap(CurrentMapName) && IsGameLevelMap(MapName))
 	{
-		UGameplayStatics::SpawnSound2D(
-			this,
-			MenuToGameTransitionSound,
-			MenuToGameTransitionVolume,
-			1.0f,
-			0.0f,
-			nullptr,
-			true);
+		CrossfadeToGameMusic();
+	}
+}
+
+void UGameAudioInstance::HandlePostLoadMap(UWorld *LoadedWorld)
+{
+	if (LoadedWorld && IsGameLevelMap(LoadedWorld->GetMapName()))
+	{
+		ForceGameMusicAudible();
 	}
 }
 
@@ -64,30 +69,106 @@ bool UGameAudioInstance::IsGameLevelMap(const FString &MapName) const
 	return MapName.Contains(TEXT("GameLevel"));
 }
 
-void UGameAudioInstance::StartBackgroundMusic()
+void UGameAudioInstance::StartMenuMusic()
 {
-	if (!BackgroundMusic || BackgroundMusicComponent)
+	if (!MenuMusic || MenuMusicComponent)
 	{
 		return;
 	}
 
-	BackgroundMusicComponent = UGameplayStatics::SpawnSound2D(
+	MenuMusicComponent = UGameplayStatics::SpawnSound2D(
 		this,
-		BackgroundMusic,
-		BackgroundMusicVolume,
+		MenuMusic,
+		CurrentMenuMusicVolume,
 		1.0f,
 		0.0f,
 		nullptr,
 		true);
 
-	if (BackgroundMusicComponent)
+	if (MenuMusicComponent)
 	{
-		BackgroundMusicComponent->OnAudioFinished.AddDynamic(this, &UGameAudioInstance::RestartBackgroundMusic);
+		MenuMusicComponent->OnAudioFinished.AddDynamic(this, &UGameAudioInstance::RestartMenuMusic);
 	}
 }
 
-void UGameAudioInstance::RestartBackgroundMusic()
+void UGameAudioInstance::RestartMenuMusic()
 {
-	BackgroundMusicComponent = nullptr;
-	StartBackgroundMusic();
+	MenuMusicComponent = nullptr;
+	StartMenuMusic();
+}
+
+void UGameAudioInstance::StartGameMusic()
+{
+	if (!GameMusic || GameMusicComponent)
+	{
+		return;
+	}
+
+	GameMusicComponent = UGameplayStatics::SpawnSound2D(
+		this,
+		GameMusic,
+		CurrentGameMusicVolume,
+		1.0f,
+		0.0f,
+		nullptr,
+		true);
+
+	if (GameMusicComponent)
+	{
+		GameMusicComponent->OnAudioFinished.AddDynamic(this, &UGameAudioInstance::RestartGameMusic);
+	}
+}
+
+void UGameAudioInstance::RestartGameMusic()
+{
+	GameMusicComponent = nullptr;
+	StartGameMusic();
+}
+
+void UGameAudioInstance::CrossfadeToGameMusic()
+{
+	CurrentMenuMusicVolume = 0.0f;
+	CurrentGameMusicVolume = GameMusicVolume;
+
+	StartGameMusic();
+
+	if (MenuMusicComponent)
+	{
+		MenuMusicComponent->AdjustVolume(MusicCrossfadeDuration, 0.0f);
+	}
+
+	if (GameMusicComponent)
+	{
+		GameMusicComponent->AdjustVolume(MusicCrossfadeDuration, GameMusicVolume);
+	}
+}
+
+void UGameAudioInstance::ForceGameMusicAudible()
+{
+	CurrentMenuMusicVolume = 0.0f;
+	CurrentGameMusicVolume = GameMusicVolume;
+
+	if (GameMusicComponent)
+	{
+		GameMusicComponent->Stop();
+		GameMusicComponent = nullptr;
+	}
+
+	CurrentGameMusicVolume = 0.001f;
+	StartGameMusic();
+
+	if (MenuMusicComponent)
+	{
+		MenuMusicComponent->AdjustVolume(MusicCrossfadeDuration, 0.0f);
+	}
+
+	if (GameMusicComponent)
+	{
+		if (!GameMusicComponent->IsPlaying())
+		{
+			GameMusicComponent->Play();
+		}
+		CurrentGameMusicVolume = GameMusicVolume;
+		GameMusicComponent->AdjustVolume(MusicCrossfadeDuration, GameMusicVolume);
+	}
 }

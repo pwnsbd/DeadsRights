@@ -1,6 +1,7 @@
 #include "MyCharacterBase.h"
 
 #include "Components/CapsuleComponent.h"
+#include "Components/AudioComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Camera/CameraComponent.h"
 #include "Engine/LocalPlayer.h"
@@ -9,6 +10,7 @@
 #include "UObject/ConstructorHelpers.h"
 #include "Kismet/GameplayStatics.h"
 #include "GameFramework/PlayerController.h"
+#include "Sound/SoundBase.h"
 
 #include "../Orchestrator.h"
 #include "../Conversion/CubeToSphere.h"
@@ -63,6 +65,11 @@ AMyCharacterBase::AMyCharacterBase()
 		IA_Move = MoveFinder.Object;
 	if (!IA_Look && LookFinder.Succeeded())
 		IA_Look = LookFinder.Object;
+
+	MovementSounds.Add(LoadObject<USoundBase>(nullptr, TEXT("/Game/sound/MovingSounds-001.MovingSounds-001")));
+	MovementSounds.Add(LoadObject<USoundBase>(nullptr, TEXT("/Game/sound/MovingSounds-002.MovingSounds-002")));
+	MovementSounds.Add(LoadObject<USoundBase>(nullptr, TEXT("/Game/sound/MovingSounds-003.MovingSounds-003")));
+	MovementSounds.Add(LoadObject<USoundBase>(nullptr, TEXT("/Game/sound/MovingSounds_freesound_community-stone-scratching-over-rock-close-up-continuously-h6-31563.MovingSounds_freesound_community-stone-scratching-over-rock-close-up-continuously-h6-31563")));
 }
 
 // =============================================================================
@@ -359,6 +366,17 @@ void AMyCharacterBase::HandleMoveReleased(const FInputActionValue & /*Value*/)
 	bMoveQueued = false;
 }
 
+void AMyCharacterBase::StopMovementSound()
+{
+	GetWorldTimerManager().ClearTimer(MovementSoundStopTimerHandle);
+
+	if (ActiveMovementSound)
+	{
+		ActiveMovementSound->Stop();
+		ActiveMovementSound = nullptr;
+	}
+}
+
 // =============================================================================
 // HandleLookInput  —  mouse orbit
 // =============================================================================
@@ -436,6 +454,44 @@ bool AMyCharacterBase::TryMove(EMazeDir Dir)
 	const int32 NewY = NeighborNode.Y;
 
 	StartTween(Face, X, Y, NewFace, NewX, NewY);
+
+	TArray<USoundBase *> ValidMovementSounds;
+	for (USoundBase *Sound : MovementSounds)
+	{
+		if (Sound)
+		{
+			ValidMovementSounds.Add(Sound);
+		}
+	}
+
+	if (ValidMovementSounds.Num() > 0)
+	{
+		StopMovementSound();
+
+		USoundBase *Sound = ValidMovementSounds[FMath::RandRange(0, ValidMovementSounds.Num() - 1)];
+		const float Pitch = FMath::RandRange(MovementSoundPitchMin, MovementSoundPitchMax);
+		ActiveMovementSound = UGameplayStatics::SpawnSoundAtLocation(
+			this,
+			Sound,
+			GetActorLocation(),
+			FRotator::ZeroRotator,
+			MovementSoundVolume,
+			Pitch,
+			0.0f,
+			nullptr,
+			nullptr,
+			true);
+
+		if (ActiveMovementSound && MovementSoundMaxDuration > 0.0f)
+		{
+			GetWorldTimerManager().SetTimer(
+				MovementSoundStopTimerHandle,
+				this,
+				&AMyCharacterBase::StopMovementSound,
+				MovementSoundMaxDuration,
+				false);
+		}
+	}
 
 	// Update logical position immediately so queued moves resolve correctly.
 	Face = NewFace;

@@ -18,24 +18,41 @@ public:
 
 protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Audio")
-	USoundBase *BackgroundMusic = nullptr;
+	USoundBase *MenuMusic = nullptr;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Audio")
-	float BackgroundMusicVolume = 1.0f;
+	USoundBase *GameMusic = nullptr;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Audio")
-	USoundBase *MenuToGameTransitionSound = nullptr;
+	float MenuMusicVolume = 1.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Audio")
-	float MenuToGameTransitionVolume = 1.0f;
+	float GameMusicVolume = 1.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Audio")
+	float MusicCrossfadeDuration = 2.0f;
 
 private:
 	UPROPERTY()
-	UAudioComponent *BackgroundMusicComponent = nullptr;
+	UAudioComponent *MenuMusicComponent = nullptr;
+
+	UPROPERTY()
+	UAudioComponent *GameMusicComponent = nullptr;
+
+	float CurrentMenuMusicVolume = 1.0f;
+	float CurrentGameMusicVolume = 0.001f;
 
 	void HandlePreLoadMap(const FString &MapName);
-	void RestartBackgroundMusic();
-	void StartBackgroundMusic();
+	void HandlePostLoadMap(UWorld *LoadedWorld);
+	UFUNCTION()
+	void RestartMenuMusic();
+
+	UFUNCTION()
+	void RestartGameMusic();
+	void StartMenuMusic();
+	void StartGameMusic();
+	void CrossfadeToGameMusic();
+	void ForceGameMusicAudible();
 	bool IsMainMenuMap(const FString &MapName) const;
 	bool IsGameLevelMap(const FString &MapName) const;
 };
