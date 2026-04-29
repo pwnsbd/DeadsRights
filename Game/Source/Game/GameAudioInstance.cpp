@@ -17,7 +17,7 @@ void UGameAudioInstance::OnStart()
 
 	if (!GameMusic)
 	{
-		GameMusic = LoadObject<USoundBase>(nullptr, TEXT("/Game/sound/crypt_game_default_rough_mix_ver_1_0.crypt_game_default_rough_mix_ver_1_0"));
+		GameMusic = LoadObject<USoundBase>(nullptr, TEXT("/Game/sound/crypt_game_default_rough_mix_ver_1_1.crypt_game_default_rough_mix_ver_1_1"));
 	}
 
 	StartMenuMusic();
@@ -94,7 +94,10 @@ void UGameAudioInstance::StartMenuMusic()
 void UGameAudioInstance::RestartMenuMusic()
 {
 	MenuMusicComponent = nullptr;
-	StartMenuMusic();
+	if (CurrentMenuMusicVolume > 0.0f)
+	{
+		StartMenuMusic();
+	}
 }
 
 void UGameAudioInstance::StartGameMusic()
@@ -122,7 +125,10 @@ void UGameAudioInstance::StartGameMusic()
 void UGameAudioInstance::RestartGameMusic()
 {
 	GameMusicComponent = nullptr;
-	StartGameMusic();
+	if (CurrentGameMusicVolume > 0.0f)
+	{
+		StartGameMusic();
+	}
 }
 
 void UGameAudioInstance::CrossfadeToGameMusic()
@@ -150,7 +156,6 @@ void UGameAudioInstance::CrossfadeToMenuMusic()
 	CurrentGameMusicVolume = 0.0f;
 
 	StartMenuMusic();
-	StartGameMusic();
 
 	if (MenuMusicComponent)
 	{
@@ -163,7 +168,7 @@ void UGameAudioInstance::CrossfadeToMenuMusic()
 
 	if (GameMusicComponent)
 	{
-		GameMusicComponent->AdjustVolume(MusicCrossfadeDuration, 0.0f);
+		GameMusicComponent->FadeOut(MusicCrossfadeDuration, 0.0f);
 	}
 }
 
